@@ -1,0 +1,34 @@
+# go-cgp-acme configuration. Copy to /etc/go-cgp-acme.toml and adjust.
+
+[cgp]
+host = "localhost"
+port = 106
+login = "postmaster"
+password = "secret"
+
+[acme]
+# Registration and recovery contact. Empty defaults to
+# postmaster@<main domain>.
+email = ""
+# Use the Let's Encrypt staging environment (also: --staging).
+staging = false
+# RSA key size for issued certificates. CommuniGate Pro supports RSA
+# only.
+key_bits = 2048
+# Renew a certificate that expires within this window.
+renew_before = "720h"
+
+[domains]
+# Process only this node's main domain. In a Dynamic Cluster enable
+# this on every node except the one designated to handle the shared
+# (cluster-wide) domains (also: --mainonly).
+main_only = false
+# When non-empty, process only these domains.
+include = []
+# Domains and domain aliases to skip.
+exclude = []
+
+[storage]
+# CommuniGate Pro Account File Storage directory (of the CLI account)
+# holding the ACME account key and the certificate archive.
+path = "private/letsencrypt"

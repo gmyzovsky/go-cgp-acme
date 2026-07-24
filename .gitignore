@@ -1,0 +1,8 @@
+*.test
+*.out
+*.swp
+go.work
+go.work.sum
+go-cgp-acme
+*.toml
+!go-cgp-acme.example.toml
