@@ -13,9 +13,9 @@ import (
 // SecureCertificate, CAChain) from GETDOMAINSETTINGS as quoted strings
 // whose text is a "[base64]" datablock, not as bare datablock tokens
 // (verified against a live 6.5.6 server). This helper accepts both a
-// real cgpdata.DataBlock and the string form, mirroring le-cgatepro's
-// block2der: every non-base64 character is stripped before decoding,
-// which also tolerates whitespace-wrapped multi-line values.
+// real cgpdata.DataBlock and the string form: every non-base64
+// character is stripped before decoding, which also tolerates
+// whitespace-wrapped multi-line values.
 func settingBytes(v cgpdata.Value) ([]byte, error) {
 	switch t := v.(type) {
 	case cgpdata.DataBlock:

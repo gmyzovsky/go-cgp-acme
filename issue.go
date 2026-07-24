@@ -75,7 +75,7 @@ func issueCertificate(ctx context.Context, c *cgpapi.Client, ac *acme.Client, d 
 // are served by the same domain site), accepting the challenge, and
 // waiting for the CA's validation. The Skin file is removed
 // afterwards; note the deliberate lowercasing on deletion - CGP
-// stores Skin file names lowercased (le-cgatepro did the same).
+// stores Skin file names lowercased.
 func solveAuthorization(ctx context.Context, c *cgpapi.Client, ac *acme.Client, domain, authzURL string, verbose bool) error {
 	authz, err := ac.GetAuthorization(ctx, authzURL)
 	if err != nil {

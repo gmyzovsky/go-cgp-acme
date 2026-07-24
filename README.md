@@ -1,17 +1,17 @@
 # go-cgp-acme
 
 An ACME (Let's Encrypt) client for the
-[CommuniGate Pro](https://www.communigatepro.com/) server: renews the
+[CommuniGate Pro](https://communigatepro.ru/) server: renews the
 TLS certificates of CGP domains and their aliases, serving http-01
 challenges out of each domain's unnamed Skin and installing issued
 certificates via the PWD/CLI protocol
 ([go-cgp-api](https://github.com/gmyzovsky/go-cgp-api) +
 [go-cgp-data](https://github.com/gmyzovsky/go-cgp-data)).
 
-The Go successor of `le-cgatepro.pl`, built for deployments where a
-wildcard certificate is not an option - e.g. SIP services, where RFC
-5922 forbids any form of wildcard in certificates - and every domain
-plus its aliases needs its own certificate.
+This client is designed for deployments where a wildcard certificate
+is not an option - e.g. SIP services, where RFC 5922 forbids any form
+of wildcard in certificates - and every domain plus its aliases needs
+its own certificate.
 
 The full cycle works and has been verified against a live 4-node CGP
 6.5 Dynamic Cluster, on both the Let's Encrypt staging and production
@@ -21,11 +21,6 @@ Services checks), http-01 validation through Skin files, issuance,
 archiving of the previous key/certificates into File Storage
 (`<path>/archive/`), and installation. Not implemented yet:
 `--self-test`.
-
-Note on issuers: since ~2026 the Let's Encrypt *staging* intermediates
-also carry `O=Let's Encrypt` - only the CN contains the `(STAGING)`
-marker - so go-cgp-acme checks the CN as well and treats a staging
-certificate as always due for replacement.
 
 ## Configuration
 

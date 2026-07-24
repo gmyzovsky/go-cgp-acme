@@ -73,9 +73,7 @@ func (d *duration) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// LoadConfig reads path and applies defaults. A missing file is an
-// error: unlike le-cgatepro.pl, this tool keeps no in-source site
-// configuration.
+// LoadConfig reads path and applies defaults.
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		CGP:     CGPConfig{Host: "localhost", Port: 106},

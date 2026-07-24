@@ -69,11 +69,7 @@ func installCertificate(ctx context.Context, c *cgpapi.Client, domain string, ke
 }
 
 // datablockString renders binary data the way the domain settings
-// expect it: as a string whose text is a "[base64]" datablock. This
-// mirrors what le-cgatepro.pl has always sent (its datablock() helper
-// passed through CGP::CLI's string quoting) and what the server itself
-// returns from GETDOMAINSETTINGS - the battle-tested representation,
-// deliberately preferred here over a bare datablock token.
+// expect it: as a string whose text is a "[base64]" datablock.
 func datablockString(der []byte) cgpdata.String {
 	return cgpdata.String("[" + base64.StdEncoding.EncodeToString(der) + "]")
 }

@@ -3,10 +3,6 @@
 // domains and their aliases, serving http-01 challenges out of each
 // domain's unnamed Skin and installing issued certificates via the
 // PWD/CLI protocol.
-//
-// It is the Go successor of le-cgatepro.pl. Current state: domain
-// enumeration and renewal decisions (the read-only half) work; ACME
-// issuance is under construction.
 package main
 
 import (
