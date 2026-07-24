@@ -25,9 +25,11 @@ renew_before = "720h"
 main_only = false
 # When non-empty, process only these domains.
 include = []
-# Domains and domain aliases to skip. Internal-only names belong
-# here - e.g. a login alias shared by every node's main domain that
-# never appears in DNS and needs no certificate.
+# Domains and domain aliases to skip. This catches everything that
+# should never reach ACME: internal-only login aliases that are not in
+# DNS, domains under a different certificate policy, or filesystem
+# artifacts that CommuniGate Pro mistakes for domains (a classic one is
+# "lost+found" appearing after an NFS mount of SharedDomains).
 exclude = []
 
 [storage]
