@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"strings"
 	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
@@ -88,6 +89,16 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 	if org := cert.Issuer.Organization; len(org) == 0 || org[0] != "Let's Encrypt" {
 		d.Renew = true
 		d.Reason = fmt.Sprintf("issuer is %q", cert.Issuer.String())
+		return d, nil
+	}
+	// As of 2026 the Let's Encrypt STAGING intermediates carry
+	// O="Let's Encrypt" too - the "(STAGING)" marker lives only in the
+	// CN (e.g. "(STAGING) Dastardly Durum YR1"), so an Organization
+	// check alone mistakes a staging certificate for a production one
+	// (le-cgatepro.pl checks only O and has this blind spot).
+	if strings.Contains(cert.Issuer.CommonName, "STAGING") {
+		d.Renew = true
+		d.Reason = fmt.Sprintf("staging issuer %q", cert.Issuer.CommonName)
 		return d, nil
 	}
 

@@ -13,11 +13,19 @@ wildcard certificate is not an option - e.g. SIP services, where RFC
 5922 forbids any form of wildcard in certificates - and every domain
 plus its aliases needs its own certificate.
 
-> **Status: under construction.** Domain enumeration and renewal
-> decisions (certificate expiry, missing aliases, issuer and PKI
-> Services checks) work read-only; ACME issuance and installation are
-> being ported. `--dry-run` is the only mode that should be pointed at
-> a production server today.
+The full cycle works and has been verified against a live 4-node CGP
+6.5 Dynamic Cluster, on both the Let's Encrypt staging and production
+environments: renewal decisions (certificate expiry, missing aliases,
+issuer - including the staging-issuer trap, see below - and PKI
+Services checks), http-01 validation through Skin files, issuance,
+archiving of the previous key/certificates into File Storage
+(`<path>/archive/`), and installation. Not implemented yet:
+`--self-test`.
+
+Note on issuers: since ~2026 the Let's Encrypt *staging* intermediates
+also carry `O=Let's Encrypt` - only the CN contains the `(STAGING)`
+marker - so go-cgp-acme checks the CN as well and treats a staging
+certificate as always due for replacement.
 
 ## Configuration
 

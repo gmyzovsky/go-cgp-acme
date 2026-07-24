@@ -15,8 +15,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
+	"golang.org/x/crypto/acme"
 )
 
 func main() {
@@ -149,5 +151,48 @@ func run(ctx context.Context) error {
 		fmt.Printf("MAIN dry run: %d domain(s) would be renewed\n", len(renewals))
 		return nil
 	}
-	return fmt.Errorf("ACME issuance is not implemented yet; re-run with --dry-run")
+
+	email := cfg.ACME.Email
+	if email == "" {
+		email = "postmaster@" + main.Name
+	}
+	ac, err := newACMEClient(ctx, c, cfg, email, *verbose)
+	if err != nil {
+		return err
+	}
+
+	failed := 0
+	for _, d := range renewals {
+		if err := renewDomain(ctx, c, ac, cfg, d, *verbose); err != nil {
+			fmt.Fprintf(os.Stderr, "ACME [ %s ] FAILED: %v\n", d.Domain, err)
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d renewal(s) failed", failed, len(renewals))
+	}
+	if *verbose {
+		fmt.Println("MAIN all done")
+	}
+	return nil
+}
+
+// renewDomain issues a certificate for one domain and installs it,
+// archiving the previous key and certificates first.
+func renewDomain(ctx context.Context, c *cgpapi.Client, ac *acme.Client, cfg *Config, d *decision, verbose bool) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	keyDER, chain, err := issueCertificate(ctx, c, ac, d, cfg.ACME.KeyBits, verbose)
+	if err != nil {
+		return err
+	}
+	if err := archiveDomain(ctx, c, cfg.Storage.Path, d.Domain, verbose); err != nil {
+		return err
+	}
+	if err := installCertificate(ctx, c, d.Domain, keyDER, chain); err != nil {
+		return err
+	}
+	fmt.Printf("MAIN [ %s ] certificate installed (%d names)\n", d.Domain, len(d.SANs))
+	return nil
 }
