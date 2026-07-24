@@ -25,7 +25,9 @@ renew_before = "720h"
 main_only = false
 # When non-empty, process only these domains.
 include = []
-# Domains and domain aliases to skip.
+# Domains and domain aliases to skip. Internal-only names belong
+# here - e.g. a login alias shared by every node's main domain that
+# never appears in DNS and needs no certificate.
 exclude = []
 
 [storage]
