@@ -38,7 +38,11 @@ designated node that runs without it and handles the shared
 
 - CommuniGate Pro 6.1.9+ (http-01 challenges are served by CGP itself,
   started with `--HTTPServeAcmeChallenge YES`)
-- A CLI account with Domain Administration rights
+- A Server Administrator CLI account: it can manage every domain
+  cluster-wide. Since a Server Administrator lives in the node's main
+  domain, its File Storage - where the ACME account key and the
+  certificate archive are kept - is node-local: in a cluster, each
+  node maintains its own ACME account and archive.
 - Certificates are RSA (CommuniGate Pro does not support ECDSA; keys
   are installed as PKCS#1)
 
