@@ -5,33 +5,32 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
 	"golang.org/x/crypto/acme"
 )
 
-const (
-	letsEncryptProduction = "https://acme-v02.api.letsencrypt.org/directory"
-	letsEncryptStaging    = "https://acme-staging-v02.api.letsencrypt.org/directory"
-
-	accountKeyBits = 4096
-)
+const accountKeyBits = 4096
 
 // newACMEClient assembles an ACME client whose RSA account key lives
-// in the CLI account's File Storage: <storage.path>/account.key for
-// production, account-staging.key for staging (separate CAs mean
-// separate accounts). A missing key is generated and saved before
-// first use. A Server Administrator's File Storage is node-local, so
-// in a cluster every node keeps its own ACME account - which Let's
-// Encrypt permits.
+// in the CLI account's File Storage, one key per CA (separate CAs mean
+// separate accounts - see acmeEndpoint for the file names). A missing
+// key is generated and saved before first use. A Server Administrator's
+// File Storage is node-local, so in a cluster every node keeps its own
+// ACME account per CA - which ACME CAs permit.
 func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEmail string, verbose bool) (*acme.Client, error) {
-	keyPath := cfg.Storage.Path + "/account.key"
-	directory := letsEncryptProduction
-	if cfg.ACME.Staging {
-		keyPath = cfg.Storage.Path + "/account-staging.key"
-		directory = letsEncryptStaging
+	directory, keyPath, err := acmeEndpoint(cfg)
+	if err != nil {
+		return nil, err
+	}
+	eab, err := externalAccountBinding(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	key, err := loadAccountKey(ctx, c, keyPath, verbose)
@@ -45,7 +44,7 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 		UserAgent:    "go-cgp-acme (+https://github.com/gmyzovsky/go-cgp-acme)",
 	}
 
-	acct := &acme.Account{}
+	acct := &acme.Account{ExternalAccountBinding: eab}
 	if contactEmail != "" {
 		acct.Contact = []string{"mailto:" + contactEmail}
 	}
@@ -63,6 +62,63 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 		}
 	}
 	return client, nil
+}
+
+// acmeEndpoint resolves the active ACME directory URL and the File
+// Storage path of its account key. With Staging set it uses StagingURL
+// (which must be configured); otherwise DirectoryURL. Each endpoint
+// gets its own account-<host>.key, so different CAs - and one CA's
+// production vs staging - keep separate accounts.
+func acmeEndpoint(cfg *Config) (directory, keyPath string, err error) {
+	directory = cfg.ACME.DirectoryURL
+	if cfg.ACME.Staging {
+		if cfg.ACME.StagingURL == "" {
+			return "", "", fmt.Errorf("acme: staging is set but staging_url is empty")
+		}
+		directory = cfg.ACME.StagingURL
+	}
+	if directory == "" {
+		return "", "", fmt.Errorf("acme: directory_url is empty")
+	}
+	u, err := url.Parse(directory)
+	if err != nil || u.Host == "" {
+		return "", "", fmt.Errorf("acme: invalid directory URL %q", directory)
+	}
+	return directory, cfg.Storage.Path + "/account-" + u.Host + ".key", nil
+}
+
+// externalAccountBinding builds the EAB from cfg, or nil when none is
+// configured. It requires both EABKID and EABKey together and decodes
+// EABKey with decodeEABKey.
+func externalAccountBinding(cfg *Config) (*acme.ExternalAccountBinding, error) {
+	kid, key := cfg.ACME.EABKID, cfg.ACME.EABKey
+	if kid == "" && key == "" {
+		return nil, nil
+	}
+	if kid == "" || key == "" {
+		return nil, fmt.Errorf("acme: eab_kid and eab_key must both be set")
+	}
+	raw, err := decodeEABKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("acme: eab_key: %w", err)
+	}
+	return &acme.ExternalAccountBinding{KID: kid, Key: raw}, nil
+}
+
+// decodeEABKey decodes an EAB HMAC key as a CA console presents it.
+// EAB keys are conventionally base64url, but CAs vary, so it accepts
+// the URL and standard alphabets, padded or not.
+func decodeEABKey(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	for _, enc := range []*base64.Encoding{
+		base64.RawURLEncoding, base64.URLEncoding,
+		base64.RawStdEncoding, base64.StdEncoding,
+	} {
+		if b, err := enc.DecodeString(s); err == nil {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("not valid base64")
 }
 
 // loadAccountKey reads the PKCS#1 DER account key from the CLI

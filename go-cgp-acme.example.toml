@@ -10,8 +10,18 @@ password = "secret"
 # Registration and recovery contact. Empty defaults to
 # postmaster@<main domain>.
 email = ""
-# Use the Let's Encrypt staging environment (also: --staging).
+# ACME directory endpoint (required). Point it at any RFC 8555 CA.
+directory_url = "https://acme-v02.api.letsencrypt.org/directory"
+# Optional staging/test endpoint, used instead of directory_url when
+# staging is set below (or --staging). Leave empty for CAs without one.
+staging_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
+# Use the staging_url endpoint above (also: --staging).
 staging = false
+# External Account Binding, required by some CAs to register an account.
+# Key ID and base64 HMAC key from the CA console. Leave empty for CAs
+# that do not use EAB (e.g. Let's Encrypt).
+eab_kid = ""
+eab_key = ""
 # RSA key size for issued certificates. CommuniGate Pro supports RSA
 # only.
 key_bits = 2048

@@ -30,7 +30,21 @@ type ACMEConfig struct {
 	// Email is the ACME registration and recovery contact. Empty
 	// defaults to postmaster@<main domain> at run time.
 	Email string `toml:"email"`
-	// Staging selects the Let's Encrypt staging environment.
+	// DirectoryURL is the production ACME directory endpoint. Required;
+	// point it at any RFC 8555 CA.
+	DirectoryURL string `toml:"directory_url"`
+	// StagingURL is an optional staging/test ACME directory endpoint,
+	// used instead of DirectoryURL when Staging is set. Some CAs offer a
+	// separate staging environment; leave empty for CAs that don't.
+	StagingURL string `toml:"staging_url"`
+	// EABKID and EABKey are the External Account Binding credentials some
+	// CAs require to register an account: a key ID and its HMAC key as
+	// issued by the CA. EABKey is base64-encoded (URL or standard
+	// alphabet, padded or not), as the CA presents it. Both empty means
+	// no EAB.
+	EABKID string `toml:"eab_kid"`
+	EABKey string `toml:"eab_key"`
+	// Staging selects StagingURL instead of DirectoryURL (also: --staging).
 	Staging bool `toml:"staging"`
 	// KeyBits is the RSA key size for newly issued certificates.
 	// CommuniGate Pro supports RSA only (PKCS#1). Default 2048.
@@ -98,6 +112,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.CGP.Login == "" || cfg.CGP.Password == "" {
 		return nil, fmt.Errorf("%s: cgp.login and cgp.password are required", path)
+	}
+	if cfg.ACME.DirectoryURL == "" {
+		return nil, fmt.Errorf("%s: acme.directory_url is required", path)
 	}
 	return cfg, nil
 }
