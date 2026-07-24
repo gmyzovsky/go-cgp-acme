@@ -49,8 +49,16 @@ type ACMEConfig struct {
 	// KeyBits is the RSA key size for newly issued certificates.
 	// CommuniGate Pro supports RSA only (PKCS#1). Default 2048.
 	KeyBits int `toml:"key_bits"`
-	// RenewBefore renews a certificate that expires within this
-	// window, as a Go duration string (default "720h", 30 days).
+	// RenewFraction renews a certificate once less than this fraction of
+	// its lifetime remains, so the window scales with certificate
+	// validity (at 1/3 a 90-day cert renews 30 days out, a 6-day cert 2
+	// days out). Range [0, 1); default 1/3. Zero disables the fractional
+	// trigger, leaving only RenewBefore.
+	RenewFraction float64 `toml:"renew_fraction"`
+	// RenewBefore is an optional absolute floor on the renewal window: a
+	// certificate is also renewed once less than this remains, whichever
+	// window is larger. A Go duration string; "0h" (default) disables it,
+	// leaving RenewFraction to govern.
 	RenewBefore duration `toml:"renew_before"`
 }
 
@@ -96,7 +104,7 @@ func (d *duration) UnmarshalText(text []byte) error {
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		CGP:     CGPConfig{Host: "localhost", Port: 106},
-		ACME:    ACMEConfig{KeyBits: 2048, RenewBefore: duration{30 * 24 * time.Hour}},
+		ACME:    ACMEConfig{KeyBits: 2048, RenewFraction: 1.0 / 3.0},
 		Storage: StorageConfig{Path: "private/letsencrypt"},
 	}
 	raw, err := os.ReadFile(path)
@@ -115,6 +123,15 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.ACME.DirectoryURL == "" {
 		return nil, fmt.Errorf("%s: acme.directory_url is required", path)
+	}
+	if cfg.ACME.RenewFraction < 0 || cfg.ACME.RenewFraction >= 1 {
+		return nil, fmt.Errorf("%s: acme.renew_fraction must be in [0, 1)", path)
+	}
+	if cfg.ACME.RenewBefore.Duration < 0 {
+		return nil, fmt.Errorf("%s: acme.renew_before must not be negative", path)
+	}
+	if cfg.ACME.RenewFraction == 0 && cfg.ACME.RenewBefore.Duration == 0 {
+		return nil, fmt.Errorf("%s: acme.renew_fraction and acme.renew_before are both zero; expiry renewal disabled", path)
 	}
 	return cfg, nil
 }

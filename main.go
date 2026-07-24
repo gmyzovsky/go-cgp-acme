@@ -111,7 +111,7 @@ func run(ctx context.Context) error {
 			}
 			continue
 		}
-		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, *force)
+		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, cfg.ACME.RenewFraction, *force)
 		if err != nil {
 			return err
 		}

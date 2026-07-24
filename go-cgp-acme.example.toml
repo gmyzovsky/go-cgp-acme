@@ -25,8 +25,13 @@ eab_key = ""
 # RSA key size for issued certificates. CommuniGate Pro supports RSA
 # only.
 key_bits = 2048
-# Renew a certificate that expires within this window.
-renew_before = "720h"
+# Renew once less than this fraction of a certificate's lifetime
+# remains, so the window scales with validity (90-day -> 30 days out,
+# 6-day -> 2 days). Range [0, 1); default 1/3.
+renew_fraction = 0.333
+# Optional absolute floor: also renew once less than this remains,
+# whichever window is larger. "0h" (default) lets renew_fraction govern.
+renew_before = "0h"
 
 [domains]
 # Process only this node's local domains: the main domain and any

@@ -28,8 +28,9 @@ type decision struct {
 //  1. PKI Services disabled (CertificateType=NO) -> skip.
 //  2. No certificate installed, or CertificateType not YES -> renew.
 //  3. A domain alias is missing from the certificate SANs -> renew.
-//  4. Certificate expires within renewBefore -> renew.
-func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude map[string]bool, renewBefore time.Duration, force bool) (*decision, error) {
+//  4. Certificate past its renewal window (renewFraction of lifetime,
+//     or the renewBefore floor) -> renew.
+func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude map[string]bool, renewBefore time.Duration, renewFraction float64, force bool) (*decision, error) {
 	d := &decision{Domain: domain}
 
 	aliases, err := c.GetDomainAliases(ctx, &cgpapi.GetDomainAliasesInput{DomainName: domain})
@@ -96,7 +97,8 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 		}
 	}
 
-	if left := time.Until(cert.NotAfter); left < renewBefore {
+	threshold := renewalThreshold(cert.NotBefore, cert.NotAfter, renewFraction, renewBefore)
+	if left := time.Until(cert.NotAfter); left < threshold {
 		d.Renew = true
 		d.Reason = fmt.Sprintf("expires %s", cert.NotAfter.Format("2006-01-02"))
 		return d, nil
@@ -104,4 +106,16 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 
 	d.Reason = fmt.Sprintf("valid until %s", cert.NotAfter.Format("2006-01-02"))
 	return d, nil
+}
+
+// renewalThreshold is the remaining-lifetime window at or below which a
+// certificate is renewed: the larger of fraction x lifetime and the
+// absolute floor renewBefore. fraction scales the window with the
+// certificate's own validity; renewBefore is an optional minimum.
+func renewalThreshold(notBefore, notAfter time.Time, fraction float64, renewBefore time.Duration) time.Duration {
+	threshold := time.Duration(fraction * float64(notAfter.Sub(notBefore)))
+	if renewBefore > threshold {
+		threshold = renewBefore
+	}
+	return threshold
 }
