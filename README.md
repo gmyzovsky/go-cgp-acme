@@ -16,9 +16,8 @@ its own certificate.
 The full cycle works and has been verified against a live 4-node CGP
 6.5 Dynamic Cluster, on both the Let's Encrypt staging and production
 environments: renewal decisions (certificate expiry, missing aliases,
-issuer - including the staging-issuer trap, see below - and PKI
-Services checks), http-01 validation through Skin files, issuance,
-archiving of the previous key/certificates into File Storage
+and PKI Services checks), http-01 validation through Skin files,
+issuance, archiving of the previous key/certificates into File Storage
 (`<path>/archive/`), and installation. Not implemented yet:
 `--self-test`.
 

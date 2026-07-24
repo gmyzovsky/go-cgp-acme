@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"strings"
 	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
@@ -28,9 +27,8 @@ type decision struct {
 // The decision chain, in order:
 //  1. PKI Services disabled (CertificateType=NO) -> skip.
 //  2. No certificate installed, or CertificateType not YES -> renew.
-//  3. Issuer is not Let's Encrypt -> renew ("fresh" domain).
-//  4. A domain alias is missing from the certificate SANs -> renew.
-//  5. Certificate expires within renewBefore -> renew.
+//  3. A domain alias is missing from the certificate SANs -> renew.
+//  4. Certificate expires within renewBefore -> renew.
 func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude map[string]bool, renewBefore time.Duration, force bool) (*decision, error) {
 	d := &decision{Domain: domain}
 
@@ -84,22 +82,6 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, fmt.Errorf("SecureCertificate of %s: %w", domain, err)
-	}
-
-	if org := cert.Issuer.Organization; len(org) == 0 || org[0] != "Let's Encrypt" {
-		d.Renew = true
-		d.Reason = fmt.Sprintf("issuer is %q", cert.Issuer.String())
-		return d, nil
-	}
-	// As of 2026 the Let's Encrypt STAGING intermediates carry
-	// O="Let's Encrypt" too - the "(STAGING)" marker lives only in the
-	// CN (e.g. "(STAGING) Dastardly Durum YR1"), so an Organization
-	// check alone would mistake a staging certificate for a production
-	// one.
-	if strings.Contains(cert.Issuer.CommonName, "STAGING") {
-		d.Renew = true
-		d.Reason = fmt.Sprintf("staging issuer %q", cert.Issuer.CommonName)
-		return d, nil
 	}
 
 	san := make(map[string]bool, len(cert.DNSNames))
