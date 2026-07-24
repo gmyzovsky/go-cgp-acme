@@ -19,10 +19,14 @@ key_bits = 2048
 renew_before = "720h"
 
 [domains]
-# Process only this node's main domain. In a Dynamic Cluster enable
-# this on every node except the one designated to handle the shared
-# (cluster-wide) domains (also: --mainonly).
-main_only = false
+# Process only this node's local domains: the main domain and any
+# regular non-Shared domains. In a Dynamic Cluster enable this on every
+# node (also: --onlylocal).
+only_local = false
+# Process only the cluster's Shared (cluster-wide) domains. Enable this
+# on the one designated node (also: --onlyshared). Setting both
+# only_local and only_shared cancels out: both are ignored.
+only_shared = false
 # When non-empty, process only these domains.
 include = []
 # Domains and domain aliases to skip. This catches everything that

@@ -21,9 +21,9 @@ type decision struct {
 	Skipped bool     // PKI services disabled or domain excluded
 }
 
-// checkDomain is the Go port of le-cgatepro's checkend: it inspects a
-// domain's effective settings and current certificate and decides
-// whether a new certificate is needed. Read-only.
+// checkDomain inspects a domain's effective settings and current
+// certificate and decides whether a new certificate is needed.
+// Read-only.
 //
 // The decision chain, in order:
 //  1. PKI Services disabled (CertificateType=NO) -> skip.
@@ -94,8 +94,8 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 	// As of 2026 the Let's Encrypt STAGING intermediates carry
 	// O="Let's Encrypt" too - the "(STAGING)" marker lives only in the
 	// CN (e.g. "(STAGING) Dastardly Durum YR1"), so an Organization
-	// check alone mistakes a staging certificate for a production one
-	// (le-cgatepro.pl checks only O and has this blind spot).
+	// check alone would mistake a staging certificate for a production
+	// one.
 	if strings.Contains(cert.Issuer.CommonName, "STAGING") {
 		d.Renew = true
 		d.Reason = fmt.Sprintf("staging issuer %q", cert.Issuer.CommonName)

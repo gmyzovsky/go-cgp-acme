@@ -35,7 +35,8 @@ func (s *stringList) Set(v string) error {
 func run(ctx context.Context) error {
 	var (
 		configPath = flag.String("config", "/etc/go-cgp-acme.toml", "path to the configuration file")
-		mainOnly   = flag.Bool("mainonly", false, "process only this node's main domain")
+		onlyLocal  = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
+		onlyShared = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
 		staging    = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
 		selfTest   = flag.Bool("self-test", false, "probe challenge reachability and report, without contacting ACME")
 		force      = flag.Bool("force", false, "renew regardless of certificate state")
@@ -52,8 +53,11 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if *mainOnly {
-		cfg.Domains.MainOnly = true
+	if *onlyLocal {
+		cfg.Domains.OnlyLocal = true
+	}
+	if *onlyShared {
+		cfg.Domains.OnlyShared = true
 	}
 	if *staging {
 		cfg.ACME.Staging = true
@@ -89,20 +93,9 @@ func run(ctx context.Context) error {
 		fmt.Printf("MAIN connected to %s (CGP %s), main domain %s\n", cfg.CGP.Host, ver.Version, main.Name)
 	}
 
-	var list []string
-	switch {
-	case cfg.Domains.MainOnly:
-		list = []string{main.Name}
-	case len(cfg.Domains.Include) > 0:
-		list = cfg.Domains.Include
-	default:
-		out, err := c.ListDomains(ctx, nil)
-		if err != nil {
-			return err
-		}
-		for _, d := range out.Domains {
-			list = append(list, fmt.Sprint(d))
-		}
+	list, err := selectDomains(ctx, c, cfg)
+	if err != nil {
+		return err
 	}
 
 	excluded := make(map[string]bool, len(cfg.Domains.Exclude))

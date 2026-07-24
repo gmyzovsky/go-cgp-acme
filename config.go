@@ -42,10 +42,15 @@ type ACMEConfig struct {
 
 // DomainsConfig selects which domains are processed.
 type DomainsConfig struct {
-	// MainOnly restricts the run to the node's main domain. In a
-	// Dynamic Cluster every node except the designated one runs with
-	// this enabled.
-	MainOnly bool `toml:"main_only"`
+	// OnlyLocal restricts the run to this node's local domains: the
+	// main domain and any regular non-Shared domains (everything
+	// LISTDOMAINS reports except the Shared ones). In a Dynamic Cluster
+	// every node runs with this enabled.
+	OnlyLocal bool `toml:"only_local"`
+	// OnlyShared restricts the run to the cluster's Shared domains.
+	// One designated node runs with this enabled. Setting both
+	// OnlyLocal and OnlyShared cancels out: both are ignored.
+	OnlyShared bool `toml:"only_shared"`
 	// Include, when non-empty, lists the only domains processed.
 	Include []string `toml:"include"`
 	// Exclude lists domains and domain aliases to skip.

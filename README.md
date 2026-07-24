@@ -27,15 +27,16 @@ archiving of the previous key/certificates into File Storage
 All site configuration lives in a TOML file (default
 `/etc/go-cgp-acme.toml`); see
 [go-cgp-acme.example.toml](go-cgp-acme.example.toml). Command-line
-flags (`--mainonly`, `--staging`, `--domain`, `--exclude`, `--force`,
-`--dry-run`, `--verbose`) override it per run.
+flags (`--onlylocal`, `--onlyshared`, `--staging`, `--domain`,
+`--exclude`, `--force`, `--dry-run`, `--verbose`) override it per run.
 
 ## Cluster operation
 
 In a CGP Dynamic Cluster the tool runs on every node: each node with
-`--mainonly` renews its guaranteed-local main domain, except one
-designated node that runs without it and handles the shared
-(cluster-wide) domains as well.
+`--onlylocal` renews its local domains (its guaranteed-local main
+domain plus any regular non-Shared domains), and one designated node
+runs with `--onlyshared` to renew the Shared (cluster-wide) domains.
+Passing both cancels out - both are ignored.
 
 ## Requirements
 
