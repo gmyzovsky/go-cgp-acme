@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -101,6 +103,37 @@ func TestQualifyLogin(t *testing.T) {
 		if got := qualifyLogin(tt.login, tt.host); got != tt.want {
 			t.Errorf("qualifyLogin(%q, %q) = %q, want %q", tt.login, tt.host, got, tt.want)
 		}
+	}
+}
+
+func TestFirstExisting(t *testing.T) {
+	dir := t.TempDir()
+	exists := filepath.Join(dir, "here.toml")
+	if err := os.WriteFile(exists, []byte("x = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "nope.toml")
+
+	if got := firstExisting([]string{missing, exists}); got != exists {
+		t.Errorf("firstExisting([missing, exists]) = %q, want %q", got, exists)
+	}
+	if got := firstExisting([]string{missing}); got != "" {
+		t.Errorf("firstExisting([missing]) = %q, want empty", got)
+	}
+}
+
+func TestDefaultConfigPaths(t *testing.T) {
+	paths := defaultConfigPaths()
+	if len(paths) == 0 {
+		t.Fatal("defaultConfigPaths returned nothing")
+	}
+	if last := paths[len(paths)-1]; last != defaultConfigPath {
+		t.Errorf("last path = %q, want %q", last, defaultConfigPath)
+	}
+	// When os.Executable succeeds there is also an exe-adjacent path
+	// first, named go-cgp-acme.toml.
+	if len(paths) == 2 && filepath.Base(paths[0]) != configBaseName {
+		t.Errorf("first path base = %q, want %q", filepath.Base(paths[0]), configBaseName)
 	}
 }
 

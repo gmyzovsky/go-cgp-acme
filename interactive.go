@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,31 @@ func flagPassed(name string) bool {
 		}
 	})
 	return found
+}
+
+// defaultConfigPaths lists the configuration files to try, in priority
+// order, when -config is not given: first one next to the executable (a
+// portable copy travels with its config - copy the binary and run it),
+// then the system path (a deb/rpm package installs it in /etc).
+func defaultConfigPaths() []string {
+	paths := make([]string, 0, 2)
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		paths = append(paths, filepath.Join(filepath.Dir(exe), configBaseName))
+	}
+	return append(paths, defaultConfigPath)
+}
+
+// firstExisting returns the first path that exists, or "" if none do.
+func firstExisting(paths []string) string {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // standaloneConfig builds a fileless configuration for a one-off run

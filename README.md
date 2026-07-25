@@ -23,11 +23,13 @@ issuance, archiving of the previous key/certificates into File Storage
 
 ## Configuration
 
-All site configuration lives in a TOML file (default
-`/etc/go-cgp-acme.toml`); see
-[go-cgp-acme.example.toml](go-cgp-acme.example.toml). Command-line
-flags (`--onlylocal`, `--onlyshared`, `--staging`, `--domain`,
-`--exclude`, `--force`, `--dry-run`, `--verbose`) override it per run.
+All site configuration lives in a TOML file; see
+[go-cgp-acme.example.toml](go-cgp-acme.example.toml). Without `-config`,
+the client looks for `go-cgp-acme.toml` next to the executable (so a
+portable copy travels with its config) and then `/etc/go-cgp-acme.toml`
+(where a `.deb`/`.rpm` package installs it). Command-line flags
+(`--onlylocal`, `--onlyshared`, `--staging`, `--domain`, `--exclude`,
+`--force`, `--dry-run`, `--verbose`) override it per run.
 
 ### One-off runs
 

@@ -24,14 +24,18 @@ func main() {
 	}
 }
 
-const defaultConfigPath = "/etc/go-cgp-acme.toml"
+const (
+	configBaseName    = "go-cgp-acme.toml"
+	defaultConfigPath = "/etc/" + configBaseName
+)
 
 // usage documents the flags and the connection-string form.
 func usage() {
 	out := flag.CommandLine.Output()
 	fmt.Fprintf(out, "Usage: %s [flags] [login:password@host:port]\n\n", os.Args[0])
-	fmt.Fprintf(out, "Renews CommuniGate Pro TLS certificates via ACME. With no -config and no\n")
-	fmt.Fprintf(out, "%s present, runs a one-off against Let's Encrypt, prompting for\n", defaultConfigPath)
+	fmt.Fprintf(out, "Renews CommuniGate Pro TLS certificates via ACME. Without -config it looks\n")
+	fmt.Fprintf(out, "for %s next to the executable, then at %s;\n", configBaseName, defaultConfigPath)
+	fmt.Fprintf(out, "with neither present it runs a one-off against Let's Encrypt, prompting for\n")
 	fmt.Fprintf(out, "any connection field the command line leaves out.\n\n")
 	fmt.Fprintf(out, "Flags:\n")
 	flag.PrintDefaults()
@@ -47,7 +51,7 @@ func (s *stringList) Set(v string) error {
 
 func run(ctx context.Context) error {
 	var (
-		configPath = flag.String("config", defaultConfigPath, "path to the configuration file")
+		configPath = flag.String("config", "", "configuration file (default: next to the binary, then "+defaultConfigPath+")")
 		onlyLocal  = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
 		onlyShared = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
 		staging    = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
@@ -87,8 +91,8 @@ func run(ctx context.Context) error {
 	case flagPassed("config"):
 		cfg, err = LoadConfig(*configPath)
 	default:
-		if _, statErr := os.Stat(*configPath); statErr == nil {
-			cfg, err = LoadConfig(*configPath)
+		if path := firstExisting(defaultConfigPaths()); path != "" {
+			cfg, err = LoadConfig(path)
 		} else {
 			cfg, fileless = standaloneConfig(), true
 		}
