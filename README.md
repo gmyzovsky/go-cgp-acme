@@ -29,6 +29,30 @@ All site configuration lives in a TOML file (default
 flags (`--onlylocal`, `--onlyshared`, `--staging`, `--domain`,
 `--exclude`, `--force`, `--dry-run`, `--verbose`) override it per run.
 
+### One-off runs
+
+For a one-time issue or renewal no configuration file is needed. When
+`-config` is not given and the default `/etc/go-cgp-acme.toml` is
+absent, the client runs standalone against Let's Encrypt (production,
+or staging under `--staging`) and asks for the CGP connection
+interactively. The connection may instead be given on the command line
+as `login:password@host:port`:
+
+```sh
+go-cgp-acme --domain sip.example.org 'postmaster@example.org:secret@mail.example.org'
+```
+
+The port defaults to 106, and an omitted password is prompted for
+without echo. The host is taken after the last `@`. A login given
+without a domain part is qualified with that host (`login@host`) so it
+authenticates in the domain you connect to, rather than one CommuniGate
+Pro infers from the connection's IP binding; to send a specific
+`login@domain` regardless of host, spell it out (`login@domain@host`).
+A connection string overrides the `[cgp]` section even when a
+configuration file is loaded, letting one file drive several servers;
+other CAs and External Account Binding still require a configuration
+file.
+
 ## Cluster operation
 
 In a CGP Dynamic Cluster the tool runs on every node: each node with

@@ -24,6 +24,19 @@ func main() {
 	}
 }
 
+const defaultConfigPath = "/etc/go-cgp-acme.toml"
+
+// usage documents the flags and the connection-string form.
+func usage() {
+	out := flag.CommandLine.Output()
+	fmt.Fprintf(out, "Usage: %s [flags] [login:password@host:port]\n\n", os.Args[0])
+	fmt.Fprintf(out, "Renews CommuniGate Pro TLS certificates via ACME. With no -config and no\n")
+	fmt.Fprintf(out, "%s present, runs a one-off against Let's Encrypt, prompting for\n", defaultConfigPath)
+	fmt.Fprintf(out, "any connection field the command line leaves out.\n\n")
+	fmt.Fprintf(out, "Flags:\n")
+	flag.PrintDefaults()
+}
+
 type stringList []string
 
 func (s *stringList) String() string { return fmt.Sprint([]string(*s)) }
@@ -34,7 +47,7 @@ func (s *stringList) Set(v string) error {
 
 func run(ctx context.Context) error {
 	var (
-		configPath = flag.String("config", "/etc/go-cgp-acme.toml", "path to the configuration file")
+		configPath = flag.String("config", defaultConfigPath, "path to the configuration file")
 		onlyLocal  = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
 		onlyShared = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
 		staging    = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
@@ -47,12 +60,66 @@ func run(ctx context.Context) error {
 	)
 	flag.Var(&domains, "domain", "domain to process (repeatable; default all)")
 	flag.Var(&exclude, "exclude", "domain or alias to skip (repeatable, adds to config)")
+	flag.Usage = usage
 	flag.Parse()
 
-	cfg, err := LoadConfig(*configPath)
+	var connCGP *CGPConfig
+	if args := flag.Args(); len(args) > 0 {
+		if len(args) > 1 {
+			return fmt.Errorf("unexpected extra argument %q (flags must precede the connection string)", args[1])
+		}
+		parsed, err := parseConnString(args[0])
+		if err != nil {
+			return err
+		}
+		connCGP = &parsed
+	}
+
+	// Configuration source: an explicit -config (an error if missing,
+	// as before); else the default file when it exists; else a fileless
+	// standalone run wired to Let's Encrypt, for a one-off issue/renew.
+	var (
+		cfg      *Config
+		err      error
+		fileless bool
+	)
+	switch {
+	case flagPassed("config"):
+		cfg, err = LoadConfig(*configPath)
+	default:
+		if _, statErr := os.Stat(*configPath); statErr == nil {
+			cfg, err = LoadConfig(*configPath)
+		} else {
+			cfg, fileless = standaloneConfig(), true
+		}
+	}
 	if err != nil {
 		return err
 	}
+
+	// A connection string overrides the CGP connection in any mode.
+	if connCGP != nil {
+		cfg.CGP.Host, cfg.CGP.Port = connCGP.Host, connCGP.Port
+		if connCGP.Login != "" {
+			cfg.CGP.Login = connCGP.Login
+		}
+		if connCGP.Password != "" {
+			cfg.CGP.Password = connCGP.Password
+		}
+	}
+	// Fill missing connection fields interactively: a connection string
+	// that omitted the password, or a fileless run with no string at all.
+	switch {
+	case connCGP != nil:
+		if err := collectCGP(&cfg.CGP, false); err != nil {
+			return err
+		}
+	case fileless:
+		if err := collectCGP(&cfg.CGP, true); err != nil {
+			return err
+		}
+	}
+
 	if *onlyLocal {
 		cfg.Domains.OnlyLocal = true
 	}
@@ -66,6 +133,16 @@ func run(ctx context.Context) error {
 		cfg.Domains.Include = domains
 	}
 	cfg.Domains.Exclude = append(cfg.Domains.Exclude, exclude...)
+
+	// In a fileless run the ACME endpoint is not written down anywhere,
+	// so make the CA it resolves to visible.
+	if fileless {
+		endpoint := cfg.ACME.DirectoryURL
+		if cfg.ACME.Staging {
+			endpoint = cfg.ACME.StagingURL
+		}
+		fmt.Printf("MAIN using ACME endpoint %s\n", endpoint)
+	}
 
 	if *selfTest {
 		return fmt.Errorf("--self-test is not implemented yet")
