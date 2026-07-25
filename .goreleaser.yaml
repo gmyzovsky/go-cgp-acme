@@ -1,0 +1,113 @@
+# GoReleaser configuration. Builds archives for linux/macOS/Windows and
+# .deb/.rpm for linux amd64, on tag push via .github/workflows/release.yml.
+# Try locally without publishing: goreleaser release --snapshot --clean
+version: 2
+
+project_name: go-cgp-acme
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  # Full matrix, used for the archives.
+  - id: binaries
+    main: .
+    binary: go-cgp-acme
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+  # linux/amd64 only, the sole target packaged as .deb/.rpm.
+  - id: pkg
+    main: .
+    binary: go-cgp-acme
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archives:
+  - id: archives
+    ids:
+      - binaries
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+      - go-cgp-acme.example.toml
+
+nfpms:
+  - id: packages
+    ids:
+      - pkg
+    package_name: go-cgp-acme
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: German Myzovsky
+    homepage: https://github.com/gmyzovsky/go-cgp-acme
+    maintainer: German Myzovsky <gmyzovsky@gmail.com>
+    description: |-
+      ACME (Let's Encrypt) client for CommuniGate Pro.
+      Renews TLS certificates for CGP domains and their aliases, serving
+      http-01 challenges from each domain's Skin and installing them over
+      the PWD/CLI protocol.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: ./go-cgp-acme.example.toml
+        dst: /etc/go-cgp-acme.toml.example
+        type: config
+      - src: ./packaging/systemd/go-cgp-acme.service
+        dst: /usr/lib/systemd/system/go-cgp-acme.service
+      - src: ./packaging/systemd/go-cgp-acme.timer
+        dst: /usr/lib/systemd/system/go-cgp-acme.timer
+      - src: ./README.md
+        dst: /usr/share/doc/go-cgp-acme/README.md
+      - src: ./LICENSE
+        dst: /usr/share/doc/go-cgp-acme/LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: gmyzovsky
+    name: go-cgp-acme

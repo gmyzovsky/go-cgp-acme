@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic CommuniGate Pro certificate renewal
+Documentation=https://github.com/gmyzovsky/go-cgp-acme
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1d
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

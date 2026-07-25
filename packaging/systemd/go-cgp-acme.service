@@ -1,0 +1,27 @@
+[Unit]
+Description=Renew CommuniGate Pro TLS certificates via ACME
+Documentation=https://github.com/gmyzovsky/go-cgp-acme
+After=network-online.target
+Wants=network-online.target
+# Do nothing until the operator has written a real configuration.
+ConditionPathExists=/etc/go-cgp-acme.toml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/go-cgp-acme
+# In a Dynamic Cluster set the role here, e.g. append --onlylocal on
+# every node and --onlyshared on the one designated node (a drop-in
+# override is cleanest: systemctl edit go-cgp-acme.service).
+
+# Output goes to the systemd journal: journalctl -u go-cgp-acme.service
+# A run that changes nothing is quiet; add --verbose to ExecStart for a
+# per-domain record, or send it to a file with, e.g.,
+#   StandardOutput=append:/var/log/go-cgp-acme.log
+#   StandardError=append:/var/log/go-cgp-acme.log
+
+# Hardening: the tool keeps no local state (account key and archive
+# live in CommuniGate Pro File Storage), so it needs no write access.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

@@ -41,7 +41,7 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 	client := &acme.Client{
 		Key:          key,
 		DirectoryURL: directory,
-		UserAgent:    "go-cgp-acme (+https://github.com/gmyzovsky/go-cgp-acme)",
+		UserAgent:    "go-cgp-acme/" + version + " (+https://github.com/gmyzovsky/go-cgp-acme)",
 	}
 
 	acct := &acme.Account{ExternalAccountBinding: eab}

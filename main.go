@@ -29,6 +29,10 @@ const (
 	defaultConfigPath = "/etc/" + configBaseName
 )
 
+// version is the release, stamped at build time via
+// -ldflags "-X main.version=...". "dev" for a plain go build.
+var version = "dev"
+
 // usage documents the flags and the connection-string form.
 func usage() {
 	out := flag.CommandLine.Output()
@@ -51,21 +55,27 @@ func (s *stringList) Set(v string) error {
 
 func run(ctx context.Context) error {
 	var (
-		configPath = flag.String("config", "", "configuration file (default: next to the binary, then "+defaultConfigPath+")")
-		onlyLocal  = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
-		onlyShared = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
-		staging    = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
-		selfTest   = flag.Bool("self-test", false, "probe challenge reachability and report, without contacting ACME")
-		force      = flag.Bool("force", false, "renew regardless of certificate state")
-		dryRun     = flag.Bool("dry-run", false, "decide and report only; change nothing")
-		verbose    = flag.Bool("verbose", false, "verbose output")
-		domains    stringList
-		exclude    stringList
+		configPath  = flag.String("config", "", "configuration file (default: next to the binary, then "+defaultConfigPath+")")
+		onlyLocal   = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
+		onlyShared  = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
+		staging     = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
+		selfTest    = flag.Bool("self-test", false, "probe challenge reachability and report, without contacting ACME")
+		force       = flag.Bool("force", false, "renew regardless of certificate state")
+		dryRun      = flag.Bool("dry-run", false, "decide and report only; change nothing")
+		verbose     = flag.Bool("verbose", false, "verbose output")
+		showVersion = flag.Bool("version", false, "print version and exit")
+		domains     stringList
+		exclude     stringList
 	)
 	flag.Var(&domains, "domain", "domain to process (repeatable; default all)")
 	flag.Var(&exclude, "exclude", "domain or alias to skip (repeatable, adds to config)")
 	flag.Usage = usage
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("go-cgp-acme", version)
+		return nil
+	}
 
 	var connCGP *CGPConfig
 	if args := flag.Args(); len(args) > 0 {
