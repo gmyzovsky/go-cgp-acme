@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
-	cgpdata "github.com/gmyzovsky/go-cgp-data"
 	"golang.org/x/crypto/acme"
 )
 
@@ -81,20 +80,12 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 // A server that will not say, or an address a CA could not write to,
 // leaves the account without a contact. That is allowed by RFC 8555 and
 // better than registering a name invented here.
-// It goes through the raw Send pipe rather than the typed wrapper:
-// go-cgp-api encodes the "*" self-reference as an ordinary object name
-// there, which the server rejects (525 illegal name for a domain
-// object).
 func accountContact(ctx context.Context, c *cgpapi.Client) string {
-	v, err := c.Send(ctx, "GETACCOUNTPREFS *")
+	out, err := c.GetAccountPrefs(ctx, &cgpapi.GetAccountPrefsInput{AccountName: "*"})
 	if err != nil {
 		return ""
 	}
-	prefs, ok := v.(cgpdata.Dictionary)
-	if !ok {
-		return ""
-	}
-	name, ok := prefs.Get("AccountName")
+	name, ok := out.Prefs.Get("AccountName")
 	if !ok {
 		return ""
 	}

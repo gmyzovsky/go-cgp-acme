@@ -2,6 +2,8 @@ github.com/BurntSushi/toml v1.5.0 h1:W5quZX/G/csjUnuI8SUYlsHs9M38FC7znL0lIO+DvMg
 github.com/BurntSushi/toml v1.5.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/gmyzovsky/go-cgp-api v0.2.0 h1:1tQLxX9qTTAoL3MMveTmQK/GV0QGOYo9l1ILJON4QNM=
 github.com/gmyzovsky/go-cgp-api v0.2.0/go.mod h1:gMAJGgYeMeHfV7cNDKUybB0W4ltMFdrJQdPVxF14VBs=
+github.com/gmyzovsky/go-cgp-api v0.3.1 h1:CZosnCqkgW9+BXtnXObpnVksmr1mlr9iMxHCNIuxQ9Y=
+github.com/gmyzovsky/go-cgp-api v0.3.1/go.mod h1:gMAJGgYeMeHfV7cNDKUybB0W4ltMFdrJQdPVxF14VBs=
 github.com/gmyzovsky/go-cgp-data v0.1.0 h1:aRndhQr5NEZMp5uf3hPYy7511rltN2frSVD/yYlhXl4=
 github.com/gmyzovsky/go-cgp-data v0.1.0/go.mod h1:gPeECUBfH6uBx1l6DXmnL/2NquYcb2Jq0VXmrzeNy2I=
 golang.org/x/crypto v0.40.0 h1:r4x+VvoG5Fm+eJcxMaY8CQM7Lb0l1lsmjGBQ6s8BfKM=
