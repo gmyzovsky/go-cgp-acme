@@ -11,8 +11,9 @@ login = "postmaster@localhost"
 password = "secret"
 
 [acme]
-# Registration and recovery contact. Empty defaults to
-# postmaster@<main domain>.
+# Registration and recovery contact. Empty asks the server for the
+# address of the account below, and registers without a contact if that
+# address is not one a CA could write to.
 email = ""
 
 # ACME directory endpoint (required). Point it at any RFC 8555 CA.
@@ -67,4 +68,4 @@ exclude = []
 [storage]
 # CommuniGate Pro Account File Storage directory (of the CLI account)
 # holding the ACME account key and the certificate archive.
-path = "private/letsencrypt"
+path = "private/acme"

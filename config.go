@@ -32,8 +32,9 @@ type CGPConfig struct {
 
 // ACMEConfig describes the ACME account and issuance parameters.
 type ACMEConfig struct {
-	// Email is the ACME registration and recovery contact. Empty
-	// defaults to postmaster@<main domain> at run time.
+	// Email is the ACME registration and recovery contact. Empty asks
+	// the server for the CLI account's own address (accountContact), and
+	// registers with no contact if that is not usable as one.
 	Email string `toml:"email"`
 	// DirectoryURL is the production ACME directory endpoint. Required;
 	// point it at any RFC 8555 CA.
@@ -91,7 +92,7 @@ type DomainsConfig struct {
 // the CommuniGate Pro Account File Storage of the CLI account.
 type StorageConfig struct {
 	// Path is the File Storage directory for the ACME account key and
-	// certificate archive. Default "private/letsencrypt".
+	// certificate archive. Default "private/acme".
 	Path string `toml:"path"`
 }
 
@@ -113,7 +114,7 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		CGP:     CGPConfig{Host: "localhost", Port: 106},
 		ACME:    ACMEConfig{KeyBits: 2048, RenewFraction: 1.0 / 3.0},
-		Storage: StorageConfig{Path: "private/letsencrypt"},
+		Storage: StorageConfig{Path: "private/acme"},
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {

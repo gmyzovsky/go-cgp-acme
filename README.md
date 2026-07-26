@@ -18,8 +18,8 @@ The full cycle works and has been verified against a live 4-node CGP
 environments: renewal decisions (certificate expiry, missing aliases,
 and PKI Services checks), the local challenge rehearsal described
 below, http-01 validation through Skin files, issuance, archiving of
-the previous key/certificates into File Storage (`<path>/archive/`),
-and installation.
+the previous key/certificates into File Storage as PEM, and
+installation.
 
 ## Configuration
 
@@ -142,6 +142,18 @@ The certificate chain is summarized rather than dumped, and the account
 key never appears. This is the level to run at when a CA rejects
 something and its own words are the answer.
 
+## Archive
+
+Before a domain's key and certificate are replaced, the ones in place
+are copied into File Storage, one file per field of the domain's
+Security page in WebAdmin:
+
+```
+<storage.path>/archive/<domain>/<timestamp>-privkey.pem
+<storage.path>/archive/<domain>/<timestamp>-cert.pem
+<storage.path>/archive/<domain>/<timestamp>-chain.pem
+```
+
 ## Cluster operation
 
 In a CGP Dynamic Cluster the tool runs on every node: each node with
@@ -154,13 +166,52 @@ Passing both cancels out - both are ignored.
 
 - CommuniGate Pro 6.1.9+ (http-01 challenges are served by CGP itself,
   started with `--HTTPServeAcmeChallenge YES`)
-- A Server Administrator CLI account: it can manage every domain
-  cluster-wide. Since a Server Administrator lives in the node's main
-  domain, its File Storage - where the ACME account key and the
-  certificate archive are kept - is node-local: in a cluster, each
-  node maintains its own ACME account and archive.
+- A Server Administrator CLI account with one access right, `Can
+  Modify All Domains and Accounts Settings` - see below. Since a Server
+  Administrator lives in the node's main domain, its File Storage -
+  where the ACME account key and the certificate archive are kept - is
+  node-local: in a cluster, each node maintains its own ACME account
+  and archive.
 - Certificates are RSA (CommuniGate Pro does not support ECDSA; keys
   are installed as PKCS#1)
+
+## Access rights
+
+The account this tool authenticates as needs exactly **one** Server
+access right: `Can Modify All Domains and Accounts Settings`. Not
+`Master`, and nothing from the Settings, Monitors or Directory realms.
+Granting it more is granting it more than it can use.
+
+That one right is enough because CommuniGate Pro counts it as the read
+right wherever a read right is asked for, and because an account
+holding it passes the per-setting filter on domain updates unrestricted.
+What the tool sends, and what each command is checked against:
+
+| Command | Right required |
+| --- | --- |
+| `GETVERSION` | none |
+| `GETACCOUNTPREFS *` | none - reading one's own Account is self-access |
+| `READSTORAGEFILE`, `WRITESTORAGEFILE` | none - the tool only ever uses its own File Storage |
+| `LISTDOMAINS`, `LISTCONTROLLEDDOMAINS` | `Can Read All Domains and Accounts Settings` |
+| `GETDOMAINALIASES`, `GETDOMAINSETTINGS`, `GETDOMAINEFFECTIVESETTINGS`, `LISTDOMAINSKINS` | read access to the domain |
+| `UPDATEDOMAINSETTINGS` (the key, certificate and CA chain) | write access to the domain |
+| `CREATEDOMAINSKIN`, `STOREDOMAINSKINFILE` (and its `DELETE` form) | `CanModifySkins` on the domain |
+
+### Without a Server Administrator
+
+A Domain Administrator can run it for their own domains, with two
+Domain Administration rights: `CanModifySkins`, for the challenge
+files, and `CertificateType`, which is what lets an update carry the
+private key, certificate and CA chain. Two conditions, both about
+avoiding the two commands in the table that need a server-wide right:
+
+- name the domains, with `domains.include` or `--domain`, so nothing
+  calls `LISTDOMAINS`
+- do not use `--onlylocal` or `--onlyshared`, which are cluster-wide
+  questions by definition
+
+The ACME contact then comes from the account's own address, and the
+account key and archive live in that account's File Storage.
 
 ## Development
 

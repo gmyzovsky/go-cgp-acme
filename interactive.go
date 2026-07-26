@@ -74,7 +74,7 @@ func standaloneConfig() *Config {
 			KeyBits:       2048,
 			RenewFraction: 1.0 / 3.0,
 		},
-		Storage: StorageConfig{Path: "private/letsencrypt"},
+		Storage: StorageConfig{Path: "private/acme"},
 	}
 }
 

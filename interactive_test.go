@@ -154,7 +154,7 @@ func TestStandaloneConfigDefaults(t *testing.T) {
 	if cfg.ACME.RenewFraction != 1.0/3.0 {
 		t.Errorf("RenewFraction = %v, want 1/3", cfg.ACME.RenewFraction)
 	}
-	if cfg.Storage.Path != "private/letsencrypt" {
-		t.Errorf("Storage.Path = %q, want private/letsencrypt", cfg.Storage.Path)
+	if cfg.Storage.Path != "private/acme" {
+		t.Errorf("Storage.Path = %q, want private/acme", cfg.Storage.Path)
 	}
 }

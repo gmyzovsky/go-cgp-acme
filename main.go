@@ -200,16 +200,14 @@ func run(ctx context.Context) error {
 	}
 	defer c.Close(ctx)
 
+	// GETVERSION is the one command the server asks no access right for,
+	// which makes it the right greeting.
 	ver, err := c.GetVersion(ctx, nil)
 	if err != nil {
 		return err
 	}
-	main, err := c.MainDomainName(ctx, nil)
-	if err != nil {
-		return err
-	}
 	if verbose {
-		fmt.Printf("MAIN connected to %s (CGP %s), main domain %s\n", cfg.CGP.Host, ver.Version, main.Name)
+		fmt.Printf("MAIN connected to %s (CGP %s)\n", cfg.CGP.Host, ver.Version)
 	}
 
 	list, err := selectDomains(ctx, c, cfg)
@@ -280,7 +278,7 @@ func run(ctx context.Context) error {
 
 	email := cfg.ACME.Email
 	if email == "" {
-		email = "postmaster@" + main.Name
+		email = accountContact(ctx, c)
 	}
 	ac, err := newACMEClient(ctx, c, cfg, email, verbose, trace)
 	if err != nil {

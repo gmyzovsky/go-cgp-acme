@@ -6,14 +6,14 @@ import (
 )
 
 func TestAcmeEndpointProduction(t *testing.T) {
-	cfg := &Config{Storage: StorageConfig{Path: "private/letsencrypt"}}
+	cfg := &Config{Storage: StorageConfig{Path: "private/acme"}}
 	cfg.ACME.DirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
 
 	dir, key, err := acmeEndpoint(cfg)
 	if err != nil || dir != cfg.ACME.DirectoryURL {
 		t.Fatalf("directory: %q, %v", dir, err)
 	}
-	if key != "private/letsencrypt/account-acme-v02.api.letsencrypt.org.key" {
+	if key != "private/acme/account-acme-v02.api.letsencrypt.org.key" {
 		t.Fatalf("per-host key path = %q", key)
 	}
 }
@@ -106,5 +106,28 @@ func TestDecodeEABKeyAlphabets(t *testing.T) {
 	}
 	if _, err := decodeEABKey("not base64!!"); err == nil {
 		t.Fatal("garbage decoded, want an error")
+	}
+}
+
+func TestValidContact(t *testing.T) {
+	cases := map[string]string{
+		// What GETACCOUNTPREFS answers on a properly named server.
+		"cgpcli@h244n44.etc.myzovsky.ru": "cgpcli@h244n44.etc.myzovsky.ru",
+		"postmaster@example.org":         "postmaster@example.org",
+
+		// Valid to CommuniGate Pro, useless as a contact.
+		"postmaster@localhost":  "",
+		"cgpcli@192.168.33.244": "",
+		"cgpcli@2001:db8::1":    "",
+		"cgpcli":                "",
+		"":                      "",
+		"@example.org":          "",
+		"cgpcli@":               "",
+		"a@b@example.org":       "",
+	}
+	for addr, want := range cases {
+		if got := validContact(addr); got != want {
+			t.Errorf("validContact(%q) = %q, want %q", addr, got, want)
+		}
 	}
 }

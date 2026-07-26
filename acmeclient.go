@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
+	cgpdata "github.com/gmyzovsky/go-cgp-data"
 	"golang.org/x/crypto/acme"
 )
 
@@ -66,6 +68,53 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 		}
 	}
 	return client, nil
+}
+
+// accountContact asks the server for the address of the Account this
+// run authenticated as, and offers it as the ACME registration contact.
+// GETACCOUNTPREFS on "*" answers with a fully qualified AccountName,
+// which beats anything derived from the login string: the server
+// resolves aliases (a login in localhost comes back in the real main
+// domain) and needs no access right for it - reading one's own Account
+// is self-access, not administration.
+//
+// A server that will not say, or an address a CA could not write to,
+// leaves the account without a contact. That is allowed by RFC 8555 and
+// better than registering a name invented here.
+// It goes through the raw Send pipe rather than the typed wrapper:
+// go-cgp-api encodes the "*" self-reference as an ordinary object name
+// there, which the server rejects (525 illegal name for a domain
+// object).
+func accountContact(ctx context.Context, c *cgpapi.Client) string {
+	v, err := c.Send(ctx, "GETACCOUNTPREFS *")
+	if err != nil {
+		return ""
+	}
+	prefs, ok := v.(cgpdata.Dictionary)
+	if !ok {
+		return ""
+	}
+	name, ok := prefs.Get("AccountName")
+	if !ok {
+		return ""
+	}
+	return validContact(fmt.Sprint(name))
+}
+
+// validContact returns addr if a CA could plausibly deliver to it, and
+// "" otherwise. CommuniGate Pro is happy with postmaster@localhost or
+// an account qualified by an IP literal; a CA wants a domain a human
+// could receive mail at.
+func validContact(addr string) string {
+	at := strings.IndexByte(addr, '@')
+	if at <= 0 || at != strings.LastIndexByte(addr, '@') || at == len(addr)-1 {
+		return ""
+	}
+	domain := addr[at+1:]
+	if !strings.Contains(domain, ".") || net.ParseIP(domain) != nil {
+		return ""
+	}
+	return addr
 }
 
 // acmeEndpoint resolves the active ACME directory URL and the File
