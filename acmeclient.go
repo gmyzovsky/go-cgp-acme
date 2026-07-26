@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -23,7 +24,7 @@ const accountKeyBits = 4096
 // key is generated and saved before first use. A Server Administrator's
 // File Storage is node-local, so in a cluster every node keeps its own
 // ACME account per CA - which ACME CAs permit.
-func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEmail string, verbose bool) (*acme.Client, error) {
+func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEmail string, verbose, trace bool) (*acme.Client, error) {
 	directory, keyPath, err := acmeEndpoint(cfg)
 	if err != nil {
 		return nil, err
@@ -42,6 +43,9 @@ func newACMEClient(ctx context.Context, c *cgpapi.Client, cfg *Config, contactEm
 		Key:          key,
 		DirectoryURL: directory,
 		UserAgent:    "go-cgp-acme/" + version + " (+https://github.com/gmyzovsky/go-cgp-acme)",
+	}
+	if trace {
+		client.HTTPClient = &http.Client{Transport: newTraceTransport(nil)}
 	}
 
 	acct := &acme.Account{ExternalAccountBinding: eab}

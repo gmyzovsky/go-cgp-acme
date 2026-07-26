@@ -11,6 +11,11 @@ import (
 // Config is the go-cgp-acme configuration, loaded from a TOML file.
 // Command-line flags override the corresponding fields.
 type Config struct {
+	// Verbose is the output level: 0 reports only what changed, 1 adds
+	// a line per domain, 2 also traces the ACME exchange. Raised per run
+	// by repeating --verbose, which wins over this when given.
+	Verbose int `toml:"verbose"`
+
 	CGP     CGPConfig     `toml:"cgp"`
 	ACME    ACMEConfig    `toml:"acme"`
 	Domains DomainsConfig `toml:"domains"`
@@ -44,8 +49,11 @@ type ACMEConfig struct {
 	// no EAB.
 	EABKID string `toml:"eab_kid"`
 	EABKey string `toml:"eab_key"`
-	// Staging selects StagingURL instead of DirectoryURL (also: --staging).
-	Staging bool `toml:"staging"`
+	// Staging selects StagingURL instead of DirectoryURL. Set by
+	// --staging only, never from the file: a staging run reports its
+	// certificate instead of installing it, which is a thing to ask for
+	// once while testing, not a state to leave a machine in.
+	Staging bool `toml:"-"`
 	// KeyBits is the RSA key size for newly issued certificates.
 	// CommuniGate Pro supports RSA only (PKCS#1). Default 2048.
 	KeyBits int `toml:"key_bits"`
@@ -123,6 +131,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.ACME.DirectoryURL == "" {
 		return nil, fmt.Errorf("%s: acme.directory_url is required", path)
+	}
+	if cfg.Verbose < 0 {
+		return nil, fmt.Errorf("%s: verbose must not be negative", path)
 	}
 	if cfg.ACME.RenewFraction < 0 || cfg.ACME.RenewFraction >= 1 {
 		return nil, fmt.Errorf("%s: acme.renew_fraction must be in [0, 1)", path)

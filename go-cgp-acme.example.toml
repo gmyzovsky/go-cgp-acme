@@ -1,5 +1,9 @@
 # go-cgp-acme configuration. Copy to /etc/go-cgp-acme.toml and adjust.
 
+# Output level: 0 reports only what changed, 1 adds a line per domain,
+# 2 also traces the ACME exchange. Repeating --verbose sets it per run.
+verbose = 0
+
 [cgp]
 host = "localhost"
 port = 106
@@ -15,11 +19,10 @@ email = ""
 directory_url = "https://acme-v02.api.letsencrypt.org/directory"
 
 # Optional staging/test endpoint, used instead of directory_url when
-# staging is set below (or --staging). Leave empty for CAs without one.
+# --staging is given. There is no staging switch here on purpose: that
+# run reports its certificate instead of installing it, which is worth
+# asking for while testing and not a state to leave a machine in.
 staging_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
-
-# Use the staging_url endpoint above (also: --staging).
-staging = false
 
 # External Account Binding, required by some CAs to register an account.
 # Key ID and base64 HMAC key from the CA console. Leave empty for CAs

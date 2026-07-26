@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
+	"os"
 	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
@@ -66,6 +69,31 @@ func installCertificate(ctx context.Context, c *cgpapi.Client, domain string, ke
 		Settings:   settings,
 	})
 	return err
+}
+
+// reportCertificate is what a staging run does instead of installing:
+// it describes the certificate that was issued and, when verbose,
+// prints the chain in PEM. A test CA's certificate has no business in a
+// live domain - and writing settings is not the part of the cycle worth
+// rehearsing, unlike validation and issuance, which have just been
+// exercised for real. The private key is deliberately not printed: it
+// is of no use without an install, and stdout tends to end up in logs.
+func reportCertificate(d *decision, chain [][]byte, verbose bool) error {
+	leaf, err := x509.ParseCertificate(chain[0])
+	if err != nil {
+		return fmt.Errorf("issued certificate of %s: %w", d.Domain, err)
+	}
+	fmt.Printf("MAIN [ %s ] staging certificate issued for %v, valid until %s, NOT installed\n",
+		d.Domain, leaf.DNSNames, leaf.NotAfter.Format("2006-01-02"))
+	if !verbose {
+		return nil
+	}
+	for _, der := range chain {
+		if err := pem.Encode(os.Stdout, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // datablockString renders binary data the way the domain settings

@@ -53,20 +53,36 @@ func (s *stringList) Set(v string) error {
 	return nil
 }
 
+// verbosity counts how often a flag was given, so -verbose -verbose is
+// level 2. IsBoolFlag keeps it usable without a value, and an explicit
+// -verbose=false turns it back off.
+type verbosity int
+
+func (v *verbosity) String() string   { return strconv.Itoa(int(*v)) }
+func (v *verbosity) IsBoolFlag() bool { return true }
+func (v *verbosity) Set(s string) error {
+	if s == "false" {
+		*v = 0
+		return nil
+	}
+	*v++
+	return nil
+}
+
 func run(ctx context.Context) error {
 	var (
 		configPath  = flag.String("config", "", "configuration file (default: next to the binary, then "+defaultConfigPath+")")
 		onlyLocal   = flag.Bool("onlylocal", false, "process only this node's local (non-Shared) domains")
 		onlyShared  = flag.Bool("onlyshared", false, "process only the cluster's Shared domains")
-		staging     = flag.Bool("staging", false, "use the Let's Encrypt staging environment")
-		selfTest    = flag.Bool("self-test", false, "probe challenge reachability and report, without contacting ACME")
-		force       = flag.Bool("force", false, "renew regardless of certificate state")
-		dryRun      = flag.Bool("dry-run", false, "decide and report only; change nothing")
-		verbose     = flag.Bool("verbose", false, "verbose output")
+		staging     = flag.Bool("staging", false, "use the staging ACME endpoint; implies --force and reports the certificate instead of installing it")
+		selfTest    = flag.Bool("self-test", false, "report what a run would do and rehearse the http-01 challenge of every name; changes nothing, contacts no CA")
+		forceFlag   = flag.Bool("force", false, "renew regardless of certificate state")
 		showVersion = flag.Bool("version", false, "print version and exit")
+		level       verbosity
 		domains     stringList
 		exclude     stringList
 	)
+	flag.Var(&level, "verbose", "verbose output; repeat (-verbose -verbose) to trace the ACME exchange")
 	flag.Var(&domains, "domain", "domain to process (repeatable; default all)")
 	flag.Var(&exclude, "exclude", "domain or alias to skip (repeatable, adds to config)")
 	flag.Usage = usage
@@ -148,6 +164,22 @@ func run(ctx context.Context) error {
 	}
 	cfg.Domains.Exclude = append(cfg.Domains.Exclude, exclude...)
 
+	// A staging run installs nothing, so there is no certificate to
+	// protect and nothing to gain from waiting for one to age: staging
+	// implies --force, or the rehearsal would have nothing to do exactly
+	// when everything is in order.
+	force := *forceFlag || cfg.ACME.Staging
+	// The file sets the standing level; a --verbose on the command line
+	// replaces it outright, so -verbose=false can quiet a chatty config
+	// for one run.
+	if flagPassed("verbose") {
+		cfg.Verbose = int(level)
+	}
+	verbose, trace := cfg.Verbose >= 1, cfg.Verbose >= 2
+	if cfg.ACME.Staging {
+		fmt.Println("MAIN staging run: renews regardless of certificate state and installs nothing")
+	}
+
 	// In a fileless run the ACME endpoint is not written down anywhere,
 	// so make the CA it resolves to visible.
 	if fileless {
@@ -156,10 +188,6 @@ func run(ctx context.Context) error {
 			endpoint = cfg.ACME.StagingURL
 		}
 		fmt.Printf("MAIN using ACME endpoint %s\n", endpoint)
-	}
-
-	if *selfTest {
-		return fmt.Errorf("--self-test is not implemented yet")
 	}
 
 	c, err := cgpapi.Dial(ctx, cgpapi.Options{
@@ -180,7 +208,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if *verbose {
+	if verbose {
 		fmt.Printf("MAIN connected to %s (CGP %s), main domain %s\n", cfg.CGP.Host, ver.Version, main.Name)
 	}
 
@@ -194,41 +222,59 @@ func run(ctx context.Context) error {
 		excluded[e] = true
 	}
 
+	if *selfTest {
+		return runSelfTest(ctx, c, cfg, list, excluded, force, verbose)
+	}
+
 	var renewals []*decision
 	for _, domain := range list {
 		if excluded[domain] {
-			if *verbose {
+			if verbose {
 				fmt.Printf("MAIN [ %s ] excluded\n", domain)
 			}
 			continue
 		}
-		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, cfg.ACME.RenewFraction, *force)
+		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, cfg.ACME.RenewFraction, force)
 		if err != nil {
 			return err
 		}
 		switch {
 		case d.Skipped:
-			if *verbose {
+			if verbose {
 				fmt.Printf("MAIN [ %s ] skipped: %s\n", domain, d.Reason)
 			}
 		case d.Renew:
 			fmt.Printf("MAIN [ %s ] needs certificate (%s), SANs %v\n", domain, d.Reason, d.SANs)
 			renewals = append(renewals, d)
 		default:
-			if *verbose {
+			if verbose {
 				fmt.Printf("MAIN [ %s ] up to date: %s\n", domain, d.Reason)
 			}
 		}
 	}
 
 	if len(renewals) == 0 {
-		if *verbose {
+		if verbose {
 			fmt.Println("MAIN nothing to do")
 		}
 		return nil
 	}
-	if *dryRun {
-		fmt.Printf("MAIN dry run: %d domain(s) would be renewed\n", len(renewals))
+
+	// Rehearse http-01 locally before any order exists: a name that
+	// cannot answer - typically a domain alias missing from DNS - would
+	// only spend an ACME request to fail. Such an alias is excluded and
+	// the domain re-checked, which may leave nothing to renew.
+	renewals, blocked, err := rehearseRenewals(ctx, c, cfg, renewals, excluded, force, verbose)
+	if err != nil {
+		return err
+	}
+	if len(renewals) == 0 {
+		if blocked > 0 {
+			return fmt.Errorf("%d domain(s) cannot answer http-01; nothing renewed", blocked)
+		}
+		if verbose {
+			fmt.Println("MAIN nothing to do")
+		}
 		return nil
 	}
 
@@ -236,22 +282,22 @@ func run(ctx context.Context) error {
 	if email == "" {
 		email = "postmaster@" + main.Name
 	}
-	ac, err := newACMEClient(ctx, c, cfg, email, *verbose)
+	ac, err := newACMEClient(ctx, c, cfg, email, verbose, trace)
 	if err != nil {
 		return err
 	}
 
-	failed := 0
+	failed, total := blocked, len(renewals)+blocked
 	for _, d := range renewals {
-		if err := renewDomain(ctx, c, ac, cfg, d, *verbose); err != nil {
+		if err := renewDomain(ctx, c, ac, cfg, d, verbose); err != nil {
 			fmt.Fprintf(os.Stderr, "ACME [ %s ] FAILED: %v\n", d.Domain, err)
 			failed++
 		}
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d of %d renewal(s) failed", failed, len(renewals))
+		return fmt.Errorf("%d of %d renewal(s) failed", failed, total)
 	}
-	if *verbose {
+	if verbose {
 		fmt.Println("MAIN all done")
 	}
 	return nil
@@ -266,6 +312,12 @@ func renewDomain(ctx context.Context, c *cgpapi.Client, ac *acme.Client, cfg *Co
 	keyDER, chain, err := issueCertificate(ctx, c, ac, d, cfg.ACME.KeyBits, verbose)
 	if err != nil {
 		return err
+	}
+	// A staging run rehearses validation and issuance; it stops short of
+	// the domain settings, which a test CA's certificate would only
+	// spoil.
+	if cfg.ACME.Staging {
+		return reportCertificate(d, chain, verbose)
 	}
 	if err := archiveDomain(ctx, c, cfg.Storage.Path, d.Domain, verbose); err != nil {
 		return err
