@@ -31,6 +31,11 @@ portable copy travels with its config) and then `/etc/go-cgp-acme.toml`
 (`--onlylocal`, `--onlyshared`, `--staging`, `--domain`, `--exclude`,
 `--force`, `--verbose`) override it per run.
 
+The packaged configuration is installed `root:mail`, mode `0660`, the
+same ownership CommuniGate Pro gives its own files. A typical Server
+Administrator is in group `mail` already, so it is editable without
+`sudo` and readable by nobody else. Package upgrades leave it alone.
+
 ### One-off runs
 
 For a one-time issue or renewal no configuration file is needed. When

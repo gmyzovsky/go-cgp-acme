@@ -3,7 +3,9 @@ Description=Renew CommuniGate Pro TLS certificates via ACME
 Documentation=https://github.com/gmyzovsky/go-cgp-acme
 After=network-online.target
 Wants=network-online.target
-# Do nothing until the operator has written a real configuration.
+# The package installs /etc/go-cgp-acme.toml (root:mail 0660) with
+# placeholder credentials: fill it in before enabling the timer. The
+# condition keeps a run from starting where the file was removed.
 ConditionPathExists=/etc/go-cgp-acme.toml
 
 [Service]

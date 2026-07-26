@@ -74,7 +74,7 @@ nfpms:
     homepage: https://github.com/gmyzovsky/go-cgp-acme
     maintainer: German Myzovsky <gmyzovsky@gmail.com>
     description: |-
-      ACME (Let's Encrypt) client for CommuniGate Pro.
+      RFC 8555 ACME (Let's Encrypt) client for CommuniGate Pro.
       Renews TLS certificates for CGP domains and their aliases, serving
       http-01 challenges from each domain's Skin and installing them over
       the PWD/CLI protocol.
@@ -84,9 +84,20 @@ nfpms:
       - rpm
     bindir: /usr/bin
     contents:
+      # Installed as the configuration itself, not as an .example to be
+      # copied: copying it would land root:root 0644, or 0640 under the
+      # usual umask, while CommuniGate Pro keeps its own files root:mail
+      # 0660. Matching that leaves the file editable by a Server
+      # Administrator in group mail and readable by nobody else.
+      # noreplace: an upgrade must never overwrite what the operator
+      # wrote here.
       - src: ./go-cgp-acme.example.toml
-        dst: /etc/go-cgp-acme.toml.example
-        type: config
+        dst: /etc/go-cgp-acme.toml
+        type: "config|noreplace"
+        file_info:
+          owner: root
+          group: mail
+          mode: 0o660
       - src: ./packaging/systemd/go-cgp-acme.service
         dst: /usr/lib/systemd/system/go-cgp-acme.service
       - src: ./packaging/systemd/go-cgp-acme.timer
