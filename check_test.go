@@ -3,7 +3,64 @@ package main
 import (
 	"testing"
 	"time"
+
+	cgpdata "github.com/gmyzovsky/go-cgp-data"
 )
+
+func TestCertificateNames(t *testing.T) {
+	aliases := cgpdata.Array{
+		cgpdata.String("www.example.org"),
+		cgpdata.String("почта.example.org"),
+		cgpdata.String("etc.example.org"),
+	}
+
+	got, err := certificateNames("example.org", aliases, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"example.org", "www.example.org", "xn--80a1acny.example.org", "etc.example.org"}
+	if len(got) != len(want) {
+		t.Fatalf("names = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("names = %v, want %v", got, want)
+		}
+	}
+
+	// Either spelling of an excluded alias keeps it out.
+	for _, spelling := range []string{"почта.example.org", "xn--80a1acny.example.org"} {
+		got, err := certificateNames("example.org", aliases, map[string]bool{spelling: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range got {
+			if name == "xn--80a1acny.example.org" {
+				t.Errorf("exclude %q left the alias in %v", spelling, got)
+			}
+		}
+	}
+}
+
+// An alias no IDNA profile will convert is a real thing to find in a
+// CGP domain list. Excluded, it must not be converted at all - it used
+// to fail the domain (and, through the caller, the whole run) on a name
+// the certificate was never going to carry.
+func TestCertificateNamesExcludesBeforeConversion(t *testing.T) {
+	aliases := cgpdata.Array{cgpdata.String("lost+found"), cgpdata.String("www.example.org")}
+
+	if _, err := certificateNames("example.org", aliases, nil); err == nil {
+		t.Fatal("an unconvertible alias was accepted, want an error")
+	}
+
+	got, err := certificateNames("example.org", aliases, map[string]bool{"lost+found": true})
+	if err != nil {
+		t.Fatalf("an excluded alias still failed the domain: %v", err)
+	}
+	if len(got) != 2 || got[1] != "www.example.org" {
+		t.Errorf("names = %v, want the domain and www.example.org", got)
+	}
+}
 
 func TestRenewalThreshold(t *testing.T) {
 	nb := time.Now()

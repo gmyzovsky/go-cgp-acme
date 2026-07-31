@@ -19,21 +19,39 @@ func TestParseConnString(t *testing.T) {
 			want: CGPConfig{Host: "h243n44.etc.myzovsky.ru", Port: 106, Login: "postmaster", Password: "secret"},
 		},
 		{
+			// No port: left at zero for the transport to decide.
 			in:   "postmaster:secret@host",
-			want: CGPConfig{Host: "host", Port: 106, Login: "postmaster", Password: "secret"},
+			want: CGPConfig{Host: "host", Login: "postmaster", Password: "secret"},
 		},
 		{
 			in:   "postmaster@host",
-			want: CGPConfig{Host: "host", Port: 106, Login: "postmaster"},
+			want: CGPConfig{Host: "host", Login: "postmaster"},
 		},
 		{
 			in:   "host",
-			want: CGPConfig{Host: "host", Port: 106},
+			want: CGPConfig{Host: "host"},
 		},
 		{
 			in:   "host:2106",
 			want: CGPConfig{Host: "host", Port: 2106},
 		},
+		{
+			// A bracketed IPv6 literal, with and without a port, and a
+			// bare one - which has colons of its own and so no port.
+			in:   "postmaster:secret@[2001:db8::1]:1106",
+			want: CGPConfig{Host: "2001:db8::1", Port: 1106, Login: "postmaster", Password: "secret"},
+		},
+		{
+			in:   "[2001:db8::1]",
+			want: CGPConfig{Host: "2001:db8::1"},
+		},
+		{
+			in:   "::1",
+			want: CGPConfig{Host: "::1"},
+		},
+		{in: "[2001:db8::1", wantErr: true},
+		{in: "[2001:db8::1]junk", wantErr: true},
+		{in: "[2001:db8::1]:0", wantErr: true},
 		{
 			// Only the first ':' in the userinfo splits login/password,
 			// so a password may itself contain colons.
@@ -145,8 +163,10 @@ func TestStandaloneConfigDefaults(t *testing.T) {
 	if cfg.ACME.StagingURL != letsEncryptStaging {
 		t.Errorf("StagingURL = %q, want %q", cfg.ACME.StagingURL, letsEncryptStaging)
 	}
-	if cfg.CGP.Port != 106 {
-		t.Errorf("Port = %d, want 106", cfg.CGP.Port)
+	// Zero, not 106: the port follows the transport, resolved by
+	// CGPConfig.Addr at dial time.
+	if cfg.CGP.Port != 0 {
+		t.Errorf("Port = %d, want 0 (transport default)", cfg.CGP.Port)
 	}
 	if cfg.ACME.KeyBits != 2048 {
 		t.Errorf("KeyBits = %d, want 2048", cfg.ACME.KeyBits)

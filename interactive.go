@@ -67,7 +67,7 @@ func firstExisting(paths []string) string {
 // string or filled in interactively.
 func standaloneConfig() *Config {
 	return &Config{
-		CGP: CGPConfig{Host: "localhost", Port: 106},
+		CGP: CGPConfig{Host: "localhost"},
 		ACME: ACMEConfig{
 			DirectoryURL:  letsEncryptProduction,
 			StagingURL:    letsEncryptStaging,
@@ -79,12 +79,14 @@ func standaloneConfig() *Config {
 }
 
 // parseConnString parses a "[login[:password]@]host[:port]" connection
-// string into a CGPConfig. The port defaults to 106; a password may
-// contain ':' (only the first separates it from the login). A missing
-// login or password is left empty for the caller to fill interactively;
-// the host is required.
+// string into a CGPConfig. An omitted port is left at zero, which
+// CGPConfig.Addr resolves from the transport; a password may contain
+// ':' (only the first separates it from the login). A missing login or
+// password is left empty for the caller to fill interactively; the host
+// is required. An IPv6 literal is written bracketed, as everywhere else
+// a host and a port share a string.
 func parseConnString(s string) (CGPConfig, error) {
-	cfg := CGPConfig{Port: 106}
+	var cfg CGPConfig
 	hostport := s
 	if at := strings.LastIndex(s, "@"); at >= 0 {
 		userinfo := s[:at]
@@ -96,20 +98,55 @@ func parseConnString(s string) (CGPConfig, error) {
 			cfg.Login = userinfo
 		}
 	}
-	if colon := strings.LastIndex(hostport, ":"); colon >= 0 {
-		portStr := hostport[colon+1:]
-		port, err := strconv.Atoi(portStr)
-		if err != nil || port <= 0 || port > 65535 {
-			return CGPConfig{}, fmt.Errorf("invalid port %q in connection string", portStr)
-		}
-		cfg.Port = port
-		hostport = hostport[:colon]
+	host, port, err := splitHostPort(hostport)
+	if err != nil {
+		return CGPConfig{}, err
 	}
-	cfg.Host = hostport
+	cfg.Host, cfg.Port = host, port
 	if cfg.Host == "" {
 		return CGPConfig{}, fmt.Errorf("missing host in connection string %q", s)
 	}
 	return cfg, nil
+}
+
+// splitHostPort splits the host part of a connection string, with a
+// zero port when none was given. net.SplitHostPort is no help here: it
+// insists on a port. The three shapes are a bracketed IPv6 literal
+// (with or without a port), a bare IPv6 literal - which has colons of
+// its own and therefore no port - and a name or IPv4 address.
+func splitHostPort(s string) (host string, port int, err error) {
+	if strings.HasPrefix(s, "[") {
+		end := strings.Index(s, "]")
+		if end < 0 {
+			return "", 0, fmt.Errorf("unterminated IPv6 address in connection string %q", s)
+		}
+		host = s[1:end]
+		switch rest := s[end+1:]; {
+		case rest == "":
+			return host, 0, nil
+		case strings.HasPrefix(rest, ":"):
+			port, err = parsePort(rest[1:])
+			return host, port, err
+		default:
+			return "", 0, fmt.Errorf("unexpected %q after the IPv6 address in a connection string", rest)
+		}
+	}
+	if strings.Count(s, ":") > 1 {
+		return s, 0, nil // a bare IPv6 literal
+	}
+	if colon := strings.LastIndex(s, ":"); colon >= 0 {
+		port, err = parsePort(s[colon+1:])
+		return s[:colon], port, err
+	}
+	return s, 0, nil
+}
+
+func parsePort(s string) (int, error) {
+	port, err := strconv.Atoi(s)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("invalid port %q in connection string", s)
+	}
+	return port, nil
 }
 
 // collectCGP fills the CGP connection fields from the terminal. With
@@ -134,7 +171,11 @@ func collectCGP(cgp *CGPConfig, full bool) error {
 		cgp.Host = v
 	}
 	if full {
-		v, err := promptLine(in, "CGP port", strconv.Itoa(cgp.Port))
+		mode, err := cgp.TLSMode()
+		if err != nil {
+			return err
+		}
+		v, err := promptLine(in, "CGP port", strconv.Itoa(cgp.portFor(mode)))
 		if err != nil {
 			return err
 		}

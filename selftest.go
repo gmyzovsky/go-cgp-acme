@@ -104,13 +104,17 @@ func probeName(ctx context.Context, c *cgpapi.Client, domain, name string, verbo
 		return probe{}, fmt.Errorf("store probe file: %w", err)
 	}
 	defer func() {
-		// CGP stores Skin file names lowercased; delete by that name.
-		_, delErr := c.DeleteDomainSkinFile(ctx, &cgpapi.DeleteDomainSkinFileInput{
+		// Detached from ctx so an interrupted run still takes its probe
+		// file with it; CGP stores Skin file names lowercased, so delete
+		// by that name.
+		cleanupCtx, cancel := detached(ctx)
+		defer cancel()
+		_, delErr := c.DeleteDomainSkinFile(cleanupCtx, &cgpapi.DeleteDomainSkinFileInput{
 			DomainName: domain,
 			FileName:   strings.ToLower(token),
 		})
-		if delErr != nil && verbose {
-			fmt.Printf("SELF [ %s ] probe file cleanup: %v\n", name, delErr)
+		if delErr != nil {
+			fmt.Fprintf(os.Stderr, "SELF [ %s ] probe file %s left behind: %v\n", name, token, delErr)
 		}
 	}()
 
@@ -190,7 +194,7 @@ func runSelfTest(ctx context.Context, c *cgpapi.Client, cfg *Config, list []stri
 		note   string
 	}
 	var rows []row
-	failed, renewals, blocked := 0, 0, 0
+	failed, renewals, blocked, errored := 0, 0, 0, 0
 
 	for _, domain := range list {
 		if excluded[domain] {
@@ -201,7 +205,13 @@ func runSelfTest(ctx context.Context, c *cgpapi.Client, cfg *Config, list []stri
 		}
 		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, cfg.ACME.RenewFraction, force)
 		if err != nil {
-			return err
+			// A self-test that stops at the first bad domain answers the
+			// question for that domain only; the report is the point, so
+			// the failure becomes a row and the sweep continues.
+			fmt.Fprintf(os.Stderr, "SELF [ %s ] FAILED: %v\n", domain, err)
+			rows = append(rows, row{name: domain, status: "ERROR", note: firstLine(err.Error())})
+			errored++
+			continue
 		}
 		if d.Skipped {
 			rows = append(rows, row{name: domain, status: "SKIP", note: d.Reason})
@@ -218,7 +228,10 @@ func runSelfTest(ctx context.Context, c *cgpapi.Client, cfg *Config, list []stri
 		// certificate is about to expire than after.
 		probes, err := probeNames(ctx, c, domain, d.SANs, verbose)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "SELF [ %s ] FAILED: %v\n", domain, err)
+			rows = append(rows, row{name: domain, status: "ERROR", note: firstLine(err.Error())})
+			errored++
+			continue
 		}
 		for _, p := range probes {
 			if !p.Pass {
@@ -242,7 +255,9 @@ func runSelfTest(ctx context.Context, c *cgpapi.Client, cfg *Config, list []stri
 		default:
 			nd, err := reconsider(ctx, c, cfg, d, badAliases, excluded, force)
 			if err != nil {
-				return err
+				fmt.Fprintf(os.Stderr, "SELF [ %s ] FAILED: %v\n", domain, err)
+				errored++
+				continue
 			}
 			if nd != nil {
 				renewals++
@@ -272,10 +287,18 @@ func runSelfTest(ctx context.Context, c *cgpapi.Client, cfg *Config, list []stri
 	if blocked > 0 {
 		fmt.Printf(", %d blocked", blocked)
 	}
+	if errored > 0 {
+		fmt.Printf(", %d could not be checked", errored)
+	}
 	fmt.Println()
 
-	if failed > 0 {
+	switch {
+	case failed > 0 && errored > 0:
+		return fmt.Errorf("self-test: %d name(s) cannot answer http-01, %d domain(s) could not be checked", failed, errored)
+	case failed > 0:
 		return fmt.Errorf("self-test: %d name(s) cannot answer http-01", failed)
+	case errored > 0:
+		return fmt.Errorf("self-test: %d domain(s) could not be checked", errored)
 	}
 	return nil
 }
@@ -317,14 +340,20 @@ func reconsider(ctx context.Context, c *cgpapi.Client, cfg *Config, d *decision,
 // domain drops out of the list entirely. A domain that cannot answer
 // for itself is dropped and counted, since its certificate is the one
 // thing this tool exists to renew.
-func rehearseRenewals(ctx context.Context, c *cgpapi.Client, cfg *Config, renewals []*decision, excluded map[string]bool, force, verbose bool) ([]*decision, int, error) {
-	kept := make([]*decision, 0, len(renewals))
-	blocked := 0
+//
+// It returns the surviving decisions, how many domains the rehearsal
+// blocked, and how many it could not rehearse at all. The last two are
+// counted rather than returned as an error: one domain the server will
+// not answer for must not cancel the renewals of the others.
+func rehearseRenewals(ctx context.Context, c *cgpapi.Client, cfg *Config, renewals []*decision, excluded map[string]bool, force, verbose bool) (kept []*decision, blocked, errored int) {
+	kept = make([]*decision, 0, len(renewals))
 
 	for _, d := range renewals {
 		probes, err := probeNames(ctx, c, d.Domain, d.SANs, verbose)
 		if err != nil {
-			return nil, 0, err
+			fmt.Fprintf(os.Stderr, "SELF [ %s ] FAILED: %v\n", d.Domain, err)
+			errored++
+			continue
 		}
 		blocker, badAliases := classifyProbes(d.Domain, probes)
 		if blocker != nil {
@@ -339,13 +368,15 @@ func rehearseRenewals(ctx context.Context, c *cgpapi.Client, cfg *Config, renewa
 
 		nd, err := reconsider(ctx, c, cfg, d, badAliases, excluded, force)
 		if err != nil {
-			return nil, 0, err
+			fmt.Fprintf(os.Stderr, "SELF [ %s ] FAILED: %v\n", d.Domain, err)
+			errored++
+			continue
 		}
 		if nd != nil {
 			kept = append(kept, nd)
 		}
 	}
-	return kept, blocked, nil
+	return kept, blocked, errored
 }
 
 // classifyProbes reads a rehearsal: the domain's own failure, if any,

@@ -29,7 +29,7 @@ the client looks for `go-cgp-acme.toml` next to the executable (so a
 portable copy travels with its config) and then `/etc/go-cgp-acme.toml`
 (where a `.deb`/`.rpm` package installs it). Command-line flags
 (`--onlylocal`, `--onlyshared`, `--staging`, `--domain`, `--exclude`,
-`--force`, `--verbose`) override it per run.
+`--force`, `--tls`, `--verbose`) override it per run.
 
 The packaged configuration is installed `root:mail`, mode `0660`, the
 same ownership CommuniGate Pro gives its own files. A typical Server
@@ -49,8 +49,10 @@ as `login:password@host:port`:
 go-cgp-acme --domain sip.example.org 'postmaster@example.org:secret@mail.example.org'
 ```
 
-The port defaults to 106, and an omitted password is prompted for
-without echo. The host is taken after the last `@`. A login given
+An omitted port follows the transport (106, or 1106 for `--tls tls`),
+and an omitted password is prompted for without echo. The host is taken
+after the last `@`, and an IPv6 address is written bracketed
+(`[2001:db8::1]:1106`). A login given
 without a domain part is qualified with that host (`login@host`) so it
 authenticates in the domain you connect to, rather than one CommuniGate
 Pro infers from the connection's IP binding; to send a specific
@@ -59,6 +61,26 @@ A connection string overrides the `[cgp]` section even when a
 configuration file is loaded, letting one file drive several servers;
 other CAs and External Account Binding still require a configuration
 file.
+
+### Transport security
+
+`cgp.tls` (or `--tls`) selects how the PWD/CLI session is protected:
+`none`, `tls` for a connection encrypted from the first byte, or
+`starttls` to connect in the clear and upgrade with `STLS` before
+authenticating. The default is `none`, because the usual deployment is a
+node renewing its own certificates over the loopback interface.
+
+Anywhere else it is worth setting. This is an administrative session: in
+the clear, every command and every response is readable on the path and
+the server is never authenticated. The login is no consolation - the
+default APOP exchange keeps the password off the wire but hands over a
+challenge and a digest that can be attacked offline. A run that would
+send cleartext to a host that is not local says so on stderr.
+
+Certificate verification is on, and stays on. If the handshake fails,
+the fix is a `ServerName` the certificate actually covers or the issuing
+CA in the trust store - connecting to a bare IP address works with
+verification enabled, matched against the certificate's IP SANs.
 
 ## Challenge rehearsal
 
@@ -147,6 +169,23 @@ The certificate chain is summarized rather than dumped, and the account
 key never appears. This is the level to run at when a CA rejects
 something and its own words are the answer.
 
+## Failures
+
+A domain that goes wrong is reported and counted, never fatal to the
+run: an alias that will not convert to punycode, a certificate that will
+not parse, a settings response that will not decode, a Skin the probe
+file cannot be written to. Every other domain is still checked and
+renewed, and the exit status carries the tally (`3 of 47 domain(s)
+failed`), which is what the timer's unit reports. The same holds for
+`--self-test`, where a domain that could not be checked becomes an
+`ERROR` row in the table rather than the end of the report.
+
+Cleanup is deliberate about this too: the challenge and probe files are
+removed on a context of their own, so an interrupted run - Ctrl-C, a
+`systemctl stop`, an order that outlasts its ten-minute budget - still
+takes them off the server. If a delete does fail, the file's name is on
+stderr, since nothing else will come back for it.
+
 ## Archive
 
 Before a domain's key and certificate are replaced, the ones in place
@@ -229,4 +268,13 @@ gofmt -l .
 
 Sibling modules `go-cgp-api`/`go-cgp-data` are used via an uncommitted
 `go.work` during development; released versions are required in
-`go.mod`.
+`go.mod`. Those two facts pull in opposite directions - a local build
+compiles the sibling checkouts, a release compiles what `go.mod` pins -
+so CI builds and tests without a workspace, which is where a stale pin
+shows up. `govulncheck` runs there as well: the tool hands
+server-supplied domain names to `golang.org/x/net/idna`, so a
+vulnerability in a dependency is one here.
+
+```sh
+GOWORK=off go test ./...     # what CI and a release actually build
+```

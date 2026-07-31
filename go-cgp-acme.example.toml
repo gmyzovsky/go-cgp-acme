@@ -6,9 +6,26 @@ verbose = 0
 
 [cgp]
 host = "localhost"
-port = 106
 login = "postmaster@localhost"
 password = "secret"
+
+# Transport for the PWD/CLI session: "none", "tls" (encrypted from the
+# first byte) or "starttls" (connect in the clear, upgrade with STLS
+# before authenticating). Also --tls for one run.
+#
+# This is an administrative session: with "none" every command and every
+# response crosses the network in clear text and the server is never
+# authenticated, and the default APOP login only spares the password
+# itself - the challenge and its digest are on the wire and can be
+# attacked offline. "none" is the default because a node normally renews
+# its own certificates over the loopback interface; set "tls" or
+# "starttls" for anything else. The client warns when it would send
+# cleartext to a host that is not local.
+tls = "none"
+
+# PWD/CLI port. Omit it to follow the transport: 106 for "none" and
+# "starttls", 1106 for "tls".
+# port = 106
 
 [acme]
 # Registration and recovery contact. Empty asks the server for the

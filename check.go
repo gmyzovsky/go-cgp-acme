@@ -7,6 +7,7 @@ import (
 	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
+	cgpdata "github.com/gmyzovsky/go-cgp-data"
 	"golang.org/x/net/idna"
 )
 
@@ -37,17 +38,9 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 	if err != nil {
 		return nil, fmt.Errorf("GetDomainAliases(%s): %w", domain, err)
 	}
-	d.SANs = []string{domain}
-	for _, a := range aliases.Aliases {
-		alias := fmt.Sprint(a)
-		punycode, err := idna.Lookup.ToASCII(alias)
-		if err != nil {
-			return nil, fmt.Errorf("alias %q of %s: %w", alias, domain, err)
-		}
-		if exclude[alias] || exclude[punycode] {
-			continue
-		}
-		d.SANs = append(d.SANs, punycode)
+	d.SANs, err = certificateNames(domain, aliases.Aliases, exclude)
+	if err != nil {
+		return nil, err
 	}
 
 	eff, err := c.GetDomainEffectiveSettings(ctx, &cgpapi.GetDomainEffectiveSettingsInput{DomainName: domain})
@@ -106,6 +99,36 @@ func checkDomain(ctx context.Context, c *cgpapi.Client, domain string, exclude m
 
 	d.Reason = fmt.Sprintf("valid until %s", cert.NotAfter.Format("2006-01-02"))
 	return d, nil
+}
+
+// certificateNames is the list of names a domain's certificate must
+// cover: the domain itself, then each alias in punycode.
+//
+// Exclusion is applied to the alias as the server spells it before the
+// name is put through IDNA at all. An alias the operator has already
+// ruled out - an internal login alias, a filesystem artifact
+// CommuniGate Pro took for a domain - has no business failing the whole
+// domain on a conversion of a name that was never going to be in the
+// certificate. The punycode form is checked too, so either spelling in
+// domains.exclude works.
+func certificateNames(domain string, aliases cgpdata.Array, exclude map[string]bool) ([]string, error) {
+	names := make([]string, 0, len(aliases)+1)
+	names = append(names, domain)
+	for _, a := range aliases {
+		alias := fmt.Sprint(a)
+		if exclude[alias] {
+			continue
+		}
+		punycode, err := idna.Lookup.ToASCII(alias)
+		if err != nil {
+			return nil, fmt.Errorf("alias %q of %s: %w", alias, domain, err)
+		}
+		if exclude[punycode] {
+			continue
+		}
+		names = append(names, punycode)
+	}
+	return names, nil
 }
 
 // renewalThreshold is the remaining-lifetime window at or below which a

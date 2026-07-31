@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"os"
 	"strings"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
@@ -116,12 +117,21 @@ func solveAuthorization(ctx context.Context, c *cgpapi.Client, ac *acme.Client, 
 		return fmt.Errorf("store challenge file: %w", err)
 	}
 	defer func() {
-		_, delErr := c.DeleteDomainSkinFile(ctx, &cgpapi.DeleteDomainSkinFileInput{
+		// Detached on purpose: the file has to go even when the order ran
+		// past renewDomain's deadline or the run was interrupted, and a
+		// command is not sent at all on a context that is already done.
+		// A leftover file would keep answering a token no CA will ask
+		// for again.
+		cleanupCtx, cancel := detached(ctx)
+		defer cancel()
+		_, delErr := c.DeleteDomainSkinFile(cleanupCtx, &cgpapi.DeleteDomainSkinFileInput{
 			DomainName: domain,
 			FileName:   strings.ToLower(chal.Token),
 		})
-		if delErr != nil && verbose {
-			fmt.Printf("ACME [ %s ] challenge file cleanup: %v\n", target, delErr)
+		if delErr != nil {
+			// Worth a line on stderr rather than only under --verbose:
+			// nothing else will remove it.
+			fmt.Fprintf(os.Stderr, "ACME [ %s ] challenge file %s left behind: %v\n", target, chal.Token, delErr)
 		}
 	}()
 

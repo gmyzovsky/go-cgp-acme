@@ -2,10 +2,14 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	cgpapi "github.com/gmyzovsky/go-cgp-api"
 )
 
 // Config is the go-cgp-acme configuration, loaded from a TOML file.
@@ -24,10 +28,70 @@ type Config struct {
 
 // CGPConfig describes the CommuniGate Pro PWD/CLI connection.
 type CGPConfig struct {
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
+	Host string `toml:"host"`
+	// Port is the PWD/CLI port. Zero - the default - takes it from the
+	// transport: 1106 for implicit TLS, 106 otherwise.
+	Port int `toml:"port"`
+	// TLS selects the transport: "none" (the default), "tls" for a
+	// connection encrypted from the first byte, or "starttls" to connect
+	// in the clear and upgrade with STLS before authenticating.
+	//
+	// This is an administrative session. Without TLS every command and
+	// every response crosses the network in clear text and the server is
+	// never authenticated; the login is no consolation, since the
+	// default APOP exchange hands an eavesdropper a challenge and a
+	// digest to attack offline. "none" is the default only because a
+	// node renewing its own certificates connects to itself.
+	TLS      string `toml:"tls"`
 	Login    string `toml:"login"`
 	Password string `toml:"password"`
+}
+
+// Ports the PWD/CLI service conventionally listens on: plain (or
+// STLS-upgraded) and implicitly encrypted.
+const (
+	plainPort       = 106
+	implicitTLSPort = 1106
+)
+
+// tlsModes maps the cgp.tls setting to the transport go-cgp-api dials
+// with. An empty setting is "none", so a configuration written before
+// the key existed keeps working.
+var tlsModes = map[string]cgpapi.TLSMode{
+	"":         cgpapi.NoTLS,
+	"none":     cgpapi.NoTLS,
+	"tls":      cgpapi.ImplicitTLS,
+	"starttls": cgpapi.StartTLS,
+}
+
+// TLSMode resolves the configured transport, and reports an unknown
+// name as an error rather than silently connecting in the clear.
+func (c CGPConfig) TLSMode() (cgpapi.TLSMode, error) {
+	mode, ok := tlsModes[strings.ToLower(strings.TrimSpace(c.TLS))]
+	if !ok {
+		return cgpapi.NoTLS, fmt.Errorf("cgp.tls must be none, tls or starttls, got %q", c.TLS)
+	}
+	return mode, nil
+}
+
+// portFor is the port to dial: the configured one, or the transport's
+// conventional default when none was given.
+func (c CGPConfig) portFor(mode cgpapi.TLSMode) int {
+	switch {
+	case c.Port != 0:
+		return c.Port
+	case mode == cgpapi.ImplicitTLS:
+		return implicitTLSPort
+	default:
+		return plainPort
+	}
+}
+
+// Addr is the "host:port" to dial for the given transport. An IPv6
+// literal comes back bracketed, which is what a host:port string needs
+// and what net.Dial expects.
+func (c CGPConfig) Addr(mode cgpapi.TLSMode) string {
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.portFor(mode)))
 }
 
 // ACMEConfig describes the ACME account and issuance parameters.
@@ -112,7 +176,7 @@ func (d *duration) UnmarshalText(text []byte) error {
 // LoadConfig reads path and applies defaults.
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
-		CGP:     CGPConfig{Host: "localhost", Port: 106},
+		CGP:     CGPConfig{Host: "localhost"},
 		ACME:    ACMEConfig{KeyBits: 2048, RenewFraction: 1.0 / 3.0},
 		Storage: StorageConfig{Path: "private/acme"},
 	}
@@ -129,6 +193,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.CGP.Login == "" || cfg.CGP.Password == "" {
 		return nil, fmt.Errorf("%s: cgp.login and cgp.password are required", path)
+	}
+	if _, err := cfg.CGP.TLSMode(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if cfg.CGP.Port < 0 || cfg.CGP.Port > 65535 {
+		return nil, fmt.Errorf("%s: cgp.port must be in [1, 65535], or absent for the transport's default", path)
 	}
 	if cfg.ACME.DirectoryURL == "" {
 		return nil, fmt.Errorf("%s: acme.directory_url is required", path)

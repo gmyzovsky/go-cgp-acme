@@ -9,8 +9,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	cgpapi "github.com/gmyzovsky/go-cgp-api"
@@ -18,10 +22,44 @@ import (
 )
 
 func main() {
-	if err := run(context.Background()); err != nil {
+	// A cancelled context now aborts an in-flight CLI read or write, so
+	// Ctrl-C (or systemctl stop on the timer's unit) ends the run at the
+	// next server round trip instead of waiting out a silent peer. What
+	// has to happen anyway on the way out - deleting a challenge file,
+	// closing the connection - runs on a detached context; see detached.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "go-cgp-acme:", err)
 		os.Exit(1)
 	}
+}
+
+// cleanupTimeout bounds a command that has to run after the work it
+// belongs to has finished or failed.
+const cleanupTimeout = 30 * time.Second
+
+// detached returns a context for exactly that work: removing the
+// challenge file after issuance, closing the connection at the end of a
+// run. go-cgp-api refuses to send anything on a context that is already
+// done, so reusing an expired or cancelled ctx here would leave behind
+// precisely the litter the cleanup exists to remove.
+func detached(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+}
+
+// isLoopbackHost reports whether the CGP connection stays inside this
+// machine, which is where an unencrypted PWD/CLI session costs nothing
+// and where this tool normally runs.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 const (
@@ -77,6 +115,7 @@ func run(ctx context.Context) error {
 		staging     = flag.Bool("staging", false, "use the staging ACME endpoint; implies --force and reports the certificate instead of installing it")
 		selfTest    = flag.Bool("self-test", false, "report what a run would do and rehearse the http-01 challenge of every name; changes nothing, contacts no CA")
 		forceFlag   = flag.Bool("force", false, "renew regardless of certificate state")
+		tlsFlag     = flag.String("tls", "", "transport for the CGP connection: none, tls, starttls (default from the configuration)")
 		showVersion = flag.Bool("version", false, "print version and exit")
 		level       verbosity
 		domains     stringList
@@ -137,6 +176,11 @@ func run(ctx context.Context) error {
 			cfg.CGP.Password = connCGP.Password
 		}
 	}
+	// Before the prompts, since the transport decides which port they
+	// offer as the default.
+	if flagPassed("tls") {
+		cfg.CGP.TLS = *tlsFlag
+	}
 	// Fill missing connection fields interactively: a connection string
 	// that omitted the password, or a fileless run with no string at all.
 	switch {
@@ -190,15 +234,30 @@ func run(ctx context.Context) error {
 		fmt.Printf("MAIN using ACME endpoint %s\n", endpoint)
 	}
 
+	// Resolved after every override, since --tls and a connection string
+	// can both reach this far.
+	tlsMode, err := cfg.CGP.TLSMode()
+	if err != nil {
+		return err
+	}
+	if tlsMode == cgpapi.NoTLS && !isLoopbackHost(cfg.CGP.Host) {
+		fmt.Fprintf(os.Stderr, "MAIN warning: administrative session to %s is not encrypted; set cgp.tls (or --tls starttls)\n", cfg.CGP.Host)
+	}
+
 	c, err := cgpapi.Dial(ctx, cgpapi.Options{
-		Addr:     cfg.CGP.Host + ":" + strconv.Itoa(cfg.CGP.Port),
+		Addr:     cfg.CGP.Addr(tlsMode),
 		Login:    cfg.CGP.Login,
 		Password: cfg.CGP.Password,
+		TLS:      tlsMode,
 	})
 	if err != nil {
 		return err
 	}
-	defer c.Close(ctx)
+	defer func() {
+		closeCtx, cancel := detached(ctx)
+		defer cancel()
+		c.Close(closeCtx)
+	}()
 
 	// GETVERSION is the one command the server asks no access right for,
 	// which makes it the right greeting.
@@ -225,6 +284,7 @@ func run(ctx context.Context) error {
 	}
 
 	var renewals []*decision
+	unchecked := 0
 	for _, domain := range list {
 		if excluded[domain] {
 			if verbose {
@@ -234,7 +294,14 @@ func run(ctx context.Context) error {
 		}
 		d, err := checkDomain(ctx, c, domain, excluded, cfg.ACME.RenewBefore.Duration, cfg.ACME.RenewFraction, force)
 		if err != nil {
-			return err
+			// One domain's trouble is not the run's. An alias that will
+			// not convert, a certificate that will not parse, a settings
+			// response that will not decode - none of them is a reason to
+			// leave every other domain unrenewed. The domain is counted
+			// and the run goes on; the exit status still reports it.
+			fmt.Fprintf(os.Stderr, "MAIN [ %s ] FAILED: %v\n", domain, err)
+			unchecked++
+			continue
 		}
 		switch {
 		case d.Skipped:
@@ -252,6 +319,9 @@ func run(ctx context.Context) error {
 	}
 
 	if len(renewals) == 0 {
+		if unchecked > 0 {
+			return fmt.Errorf("%d domain(s) could not be checked; nothing renewed", unchecked)
+		}
 		if verbose {
 			fmt.Println("MAIN nothing to do")
 		}
@@ -262,13 +332,16 @@ func run(ctx context.Context) error {
 	// cannot answer - typically a domain alias missing from DNS - would
 	// only spend an ACME request to fail. Such an alias is excluded and
 	// the domain re-checked, which may leave nothing to renew.
-	renewals, blocked, err := rehearseRenewals(ctx, c, cfg, renewals, excluded, force, verbose)
-	if err != nil {
-		return err
-	}
+	renewals, blocked, errored := rehearseRenewals(ctx, c, cfg, renewals, excluded, force, verbose)
+	unchecked += errored
 	if len(renewals) == 0 {
-		if blocked > 0 {
+		switch {
+		case blocked > 0 && unchecked > 0:
+			return fmt.Errorf("%d domain(s) cannot answer http-01, %d could not be checked; nothing renewed", blocked, unchecked)
+		case blocked > 0:
 			return fmt.Errorf("%d domain(s) cannot answer http-01; nothing renewed", blocked)
+		case unchecked > 0:
+			return fmt.Errorf("%d domain(s) could not be checked; nothing renewed", unchecked)
 		}
 		if verbose {
 			fmt.Println("MAIN nothing to do")
@@ -285,7 +358,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	failed, total := blocked, len(renewals)+blocked
+	failed, total := blocked+unchecked, len(renewals)+blocked+unchecked
 	for _, d := range renewals {
 		if err := renewDomain(ctx, c, ac, cfg, d, verbose); err != nil {
 			fmt.Fprintf(os.Stderr, "ACME [ %s ] FAILED: %v\n", d.Domain, err)
@@ -293,7 +366,7 @@ func run(ctx context.Context) error {
 		}
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d of %d renewal(s) failed", failed, total)
+		return fmt.Errorf("%d of %d domain(s) failed", failed, total)
 	}
 	if verbose {
 		fmt.Println("MAIN all done")
