@@ -112,8 +112,8 @@ func TestDecodeEABKeyAlphabets(t *testing.T) {
 func TestValidContact(t *testing.T) {
 	cases := map[string]string{
 		// What GETACCOUNTPREFS answers on a properly named server.
-		"cgpcli@h244n44.etc.myzovsky.ru": "cgpcli@h244n44.etc.myzovsky.ru",
-		"postmaster@example.org":         "postmaster@example.org",
+		"cgpcli@node1.example.test": "cgpcli@node1.example.test",
+		"postmaster@example.org":    "postmaster@example.org",
 
 		// Valid to CommuniGate Pro, useless as a contact.
 		"postmaster@localhost":  "",

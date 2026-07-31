@@ -15,8 +15,8 @@ func TestParseConnString(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			in:   "postmaster:secret@h243n44.etc.myzovsky.ru:106",
-			want: CGPConfig{Host: "h243n44.etc.myzovsky.ru", Port: 106, Login: "postmaster", Password: "secret"},
+			in:   "postmaster:secret@node1.example.test:106",
+			want: CGPConfig{Host: "node1.example.test", Port: 106, Login: "postmaster", Password: "secret"},
 		},
 		{
 			// No port: left at zero for the transport to decide.
@@ -111,7 +111,7 @@ func TestQualifyLogin(t *testing.T) {
 	tests := []struct {
 		login, host, want string
 	}{
-		{"claude", "h243n44.etc.myzovsky.ru", "claude@h243n44.etc.myzovsky.ru"},
+		{"claude", "node1.example.test", "claude@node1.example.test"},
 		{"claude", "192.168.33.253", "claude@192.168.33.253"},
 		{"postmaster", "localhost", "postmaster@localhost"},
 		{"claude@example.org", "mail.example.org", "claude@example.org"}, // already qualified
